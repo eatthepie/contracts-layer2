@@ -63,7 +63,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     mapping(uint256 => Difficulty) public gameDifficulty;
     mapping(uint256 => uint256[4][]) public gameWinningNumbers;
     mapping(uint256 => address player) public gameWinnerLoyaltyPrize;
-    mapping(uint256 -> uint256[4]) public gamePayouts; // gold, silver, bronze, loyalty
+    mapping(uint256 => uint256[4]) public gamePayouts; // gold, silver, bronze, loyalty
     // tickets
     mapping(uint256 => mapping(bytes32 => address[])) public goldTickets;
     mapping(uint256 => mapping(bytes32 => address[])) public silverTickets;
