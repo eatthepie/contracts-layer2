@@ -6,8 +6,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 
-// Assuming you have the VDF Pietrzak contract
 import "./VDFPietrzak.sol";
+import "./NFTGenerator.sol";
 
 contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     // Enums
@@ -21,6 +21,10 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         mapping(uint256 => bytes32[]) SilverTickets; 
         mapping(uint256 => bytes32[]) BronzeTickets;
     }
+
+    // Contracts
+    VDFPietrzak public vdfContract;
+    NFTGenerator public nftGenerator;
 
     // Constants
     /* prize pool distribution (percentages) */
@@ -41,8 +45,19 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     uint256 public constant DRAW_INTERVAL = 1 weeks;
     uint256 public constant DRAW_EPOCH_OFFSET = 4; // delay for 4 epochs
     uint256 public constant DRAW_BLOCK_OFFSET = 2; // delay for 2 blocks in epoch
+    uint256 public constant RSA_2048_SECRET_KEY = 2519590847565789349402718324004839857142928212620403202777713783604366202070
+           7595556264018525880784406918290641249515082189298559149176184502808489120072
+           8449926873928072877767359714183472702618963750149718246911650776133798590957
+           0009733045974880842840179742910064245869181719511874612151517265463228221686
+           9987549182422433637259085141865462043576798423387184774447920739934236584823
+           8242811981638150106748104516603773060562016196762561338441436038339044149526
+           3443219011465754445417842402092461651572335077870774981712577246796292638635
+           6373289912154831438167899885040445364023527381951378636564391212010397122822
+           120720357;
+    uint256 public constant BLOCKS_PER_YEAR = 2_252_571; // Approximate number of blocks in a year
 
     // State Variables
+    address public feeRecipient;
     uint256 public ticketPrice;
     uint256 public currentGameNumber;
     uint256 public lastDrawTime;
@@ -53,10 +68,17 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     /* anyone can call changeDifficulty() */
     Difficulty public newDifficulty;
     uint256 public newDifficultyGame;
+    uint256 public lastDifficultyChangeGame;
     /* new ticket price */
     /* only admin capability - can change ticket price if needed. will have a 4 game buffer */
     uint256 public newTicketPrice;
     uint256 public newTicketPriceGameNumber;
+    /* new VDF N input */
+    /* only admin capability - can change VDF N input if needed. will have a 10 game buffer */
+    /* needed if RSA 2048 security gets busted in the next 2 decades */
+    uint256 public vdfModN;
+    uint256 public newVDFModulus;
+    uint256 public newVDFModulusNumber;
 
     // game state
     mapping(uint256 => uint256) public gamePrizePool;
@@ -75,10 +97,10 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     mapping(uint256 => bool) public gameVDFValid;
     // game results
     mapping(uint256 => bool) public gameDrawCompleted;
+    mapping(uint256 => mapping(address => bool)) public prizesClaimed;
+    mapping(uint256 => bool) public gameJackpotWon;
+    mapping(uint256 => uint256) public gameDrawnBlock;
     mapping(address => Player) public playerInfo;
-
-    // VDF Pietrzak contract instance
-    VDFPietrzak public vdfContract;
 
     // Events
     event TicketPurchased(address indexed player, uint256 gameNumber, uint256[3] numbers, uint256 etherball);
@@ -89,13 +111,22 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     event DifficultyChanged(uint256 gameNumber, Difficulty newDifficulty);
     event TicketPriceChangeScheduled(uint256 newPrice, uint256 effectiveGameNumber);
     event UnclaimedPrizeTransferred(uint256 fromGame, uint256 toGame, uint256 amount);
+    event GamePrizePayout(uint256 gameNumber, uint256 goldPrize, uint256 silverPrize, uint256 bronzePrize, uint256 loyaltyPrize);
+    event FeeRecipientChanged(address newFeeRecipient);
+    event PrizeClaimed(uint256 gameNumber, address player, uint256 amount);
+    event NFTMinted(address indexed winner, uint256 indexed tokenId, uint256 indexed gameNumber);
+    event UnclaimedPrizesReleased(uint256 fromGame, uint256 toGame, uint256 amount);
 
-    constructor(address _vdfContractAddress) {
+    constructor(address _vdfContractAddress, address _nftGeneratorAddress, address _feeRecipient) {
+        /* RSA_2048_SECRET_KEY needs to be set in vdf contract and must be updatable */
         vdfContract = VDFPietrzak(_vdfContractAddress);
+        nftGenerator = LotteryNFTGenerator(_nftGeneratorAddress);
         ticketPrice = 0.1 ether;
         currentGameNumber = 1;
         gameDifficulty[currentGameNumber] = Difficulty.Easy;
         lastDrawTime = block.timestamp;
+        vdfModN = RSA_2048_SECRET_KEY;
+        feeRecipient = _feeRecipient;
     }
 
     // ticketing
@@ -194,13 +225,27 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         return true;
     }
 
-    /* ticket prices can only be changed with a 4 game advance notice */
+    /* set new ticket price */
     function setTicketPrice(uint256 _newPrice) external onlyOwner {
         require(_newPrice > 0, "Price must be positive");
         newTicketPrice = _newPrice;
         newTicketPriceGameNumber = currentGameNumber + 4;
         emit TicketPriceChangeScheduled(_newPrice, newTicketPriceGameNumber);
     }
+
+    /* set new VDF modulus N */
+    function setVDFModulus(uint256 _newModulus) external onlyOwner {
+        require(_newModulus > 0, "Modulus must be positive");
+        newVDFModulus = _newModulus;
+        newVDFModulusNumber = currentGameNumber + 10;
+    }
+
+    function setFeeRecipient(address _feeRecipient) external onlyOwner {
+        require(_feeRecipient != address(0), "Invalid fee recipient address");
+        feeRecipient = _feeRecipient;
+        emit FeeRecipientChanged(_feeRecipient);
+    }
+
 
     function computeBronzeTicketHash(uint256 numberOne, uint256 numberTwo) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(numberOne, numberTwo));
@@ -231,12 +276,22 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         uint256 targetSetBlock = (targetEpoch * BLOCKS_PER_EPOCH) + BLOCK_OFFSET;
         gameRandaoBlockMin[gameNumber] = targetSetBlock;
 
-        // Start the next game
+        // check difficulty changes
         currentGameNumber += 1;
         if (newDifficulty && newDifficultyGame == currentGameNumber) {
             gameDifficulty[currentGameNumber] = newDifficulty;
         } else {
             gameDifficulty[currentGameNumber] = gameDifficulty[gameNumber];
+        }
+
+        // check ticket price changes
+        if (newTicketPrice && newTicketPriceGameNumber == currentGameNumber) {
+            ticketPrice = newTicketPrice;
+        }
+
+        // check vdf modulus changes
+        if (newVDFModulus && newVDFModulusNumber == currentGameNumber) {
+            vdfModN = newVDFModulus;
         }
 
         emit DrawInitiated(gameNumber);
@@ -292,10 +347,11 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         gameWinningNumbers[gameNumber] = winningNumbers;
     }
 
-    // TODO: continue from here on forward
-
     // Distribute prizes for the game
-    function calculatePayouts(uint256 gameNumber) internal {
+    function calculatePayouts(uint256 gameNumber) {
+        require(gameVDFValid[gameNumber], "VDF proof not yet validated for this game");
+        require(!gameDrawCompleted[gameNumber], "Payouts already calculated for this game");
+
         uint256 prizePool = gamePrizePool[gameNumber];
         uint256 goldPrize = (prizePool * GOLD_PERCENTAGE) / 10000;
         uint256 silverPrize = (prizePool * SILVER_PLACE_PERCENTAGE) / 10000;
@@ -303,98 +359,197 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         uint256 loyaltyPrize = (prizePool * LOYALTY_PERCENTAGE) / 10000;
         uint256 fee = (prizePool * FEE_PERCENTAGE) / 10000;
 
-        // Calculate the prize per winner for each category
-        uint256 goldWinners = goldTickets[gameNumber].length;
-        uint256 silverWinners = silverTickets[gameNumber].length;
-        uint256 bronzeWinners = bronzeTickets[gameNumber].length;
+        uint256[4] memory winningNumbers = gameWinningNumbers[gameNumber];
+        bytes32 goldTicketHash = computeGoldTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
+        bytes32 silverTicketHash = computeSilverTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2]);
+        bytes32 bronzeTicketHash = computeBronzeTicketHash(winningNumbers[0], winningNumbers[1]);
 
-        uint256 goldPrizePerWinner = goldPrize / goldWinners;
-        uint256 silverPrizePerWinner = silverPrize / silverWinners;
-        uint256 bronzePrizePerWinner = bronzePrize / bronzeWinners;
+        address[] memory goldWinners = goldTickets[gameNumber][goldTicketHash];
+        address[] memory silverWinners = silverTickets[gameNumber][silverTicketHash];
+        address[] memory bronzeWinners = bronzeTickets[gameNumber][bronzeTicketHash];
+
+        uint256 goldWinnerCount = goldWinners.length;
+        uint256 silverWinnerCount = silverWinners.length;
+        uint256 bronzeWinnerCount = bronzeWinners.length;
+
+        uint256 goldPrizePerWinner = goldWinnerCount > 0 ? goldPrize / goldWinnerCount : 0;
+        uint256 silverPrizePerWinner = silverWinnerCount > 0 ? silverPrize / silverWinnerCount : 0;
+        uint256 bronzePrizePerWinner = bronzeWinnerCount > 0 ? bronzePrize / bronzeWinnerCount : 0;
+
+        // Find the loyalty prize winner
+        address loyaltyWinner;
+        uint256 maxConsecutiveGames = 0;
+        address[] memory allWinners = new address[](goldWinnerCount + silverWinnerCount + bronzeWinnerCount);
+        uint256 winnerIndex = 0;
+
+        for (uint256 i = 0; i < goldWinnerCount; i++) {
+            allWinners[winnerIndex++] = goldWinners[i];
+        }
+        for (uint256 i = 0; i < silverWinnerCount; i++) {
+            allWinners[winnerIndex++] = silverWinners[i];
+        }
+        for (uint256 i = 0; i < bronzeWinnerCount; i++) {
+            allWinners[winnerIndex++] = bronzeWinners[i];
+        }
+
+        /* is there a way to make this unique so we dont loop over the same address twice */
+        for (uint256 i = 0; i < allWinners.length; i++) {
+            address player = allWinners[i];
+            uint256 consecutiveGames = playerInfo[player].consecutiveGamesPlayed;
+            if (consecutiveGames > maxConsecutiveGames) {
+                maxConsecutiveGames = consecutiveGames;
+                loyaltyWinner = player;
+            }
+        }
+
+        // Calculate unclaimed prizes
+        uint256 totalPaidOut = (goldPrizePerWinner * goldWinnerCount) +
+                            (silverPrizePerWinner * silverWinnerCount) +
+                            (bronzePrizePerWinner * bronzeWinnerCount) +
+                            loyaltyPrize +
+                            fee;
+        uint256 unclaimedPrize = prizePool - totalPaidOut;
+
+        // Store game outcomes and payout information
+        gamePayouts[gameNumber] = [goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyPrize];
+        gameWinnerLoyaltyPrize[gameNumber] = loyaltyWinner;
+        gameJackpotWon[gameNumber] = (goldWinnerCount > 0);
+        gameDrawnBlock[gameNumber] = block.number;
+
+        // Transfer unclaimed prize to the next game
+        if (unclaimedPrize > 0) {
+            gamePrizePool[currentGameNumber] += unclaimedPrize;
+            emit UnclaimedPrizeTransferred(gameNumber, currentGameNumber, unclaimedPrize);
+        }
+
+        // Mark the game as completed
+        gameDrawCompleted[gameNumber] = true;
+
+        // Emit event with payout information
+        emit GamePrizePayout(gameNumber, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyPrize);
+
+        // Transfer fees to the fee recipient
+        if (feeRecipient != address(0)) {
+            payable(feeRecipient).transfer(fee);
+        } else {
+            gamePrizePool[currentGameNumber] += fee;
+        }
     }
 
     function claimPrize(uint256 gameNumber) external {
-        require(gameDrawCompleted[gameNumber], "Prizes not yet distributed for this game");
-        require(!gameWinnerLoyaltyPrize[gameNumber][msg.sender], "Loyalty prize already claimed");
+        require(gameDrawCompleted[gameNumber], "Prizes not yet calculated for this game");
+        require(!prizesClaimed[gameNumber][msg.sender], "Prize already claimed");
 
-        uint256 loyaltyPrize = gamePayouts[gameNumber][3];
-        gameWinnerLoyaltyPrize[gameNumber][msg.sender] = true;
-        payable(msg.sender).transfer(loyaltyPrize);
+        uint256[4] memory payouts = gamePayouts[gameNumber];
+        uint256 totalPrize = 0;
+
+        // Check Gold prize
+        bytes32 goldTicketHash = computeGoldTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1], gameWinningNumbers[gameNumber][2], gameWinningNumbers[gameNumber][3]);
+        if (goldTickets[gameNumber][goldTicketHash].contains(msg.sender)) {
+            totalPrize += payouts[0];
+        }
+
+        // Check Silver prize
+        bytes32 silverTicketHash = computeSilverTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1], gameWinningNumbers[gameNumber][2]);
+        if (silverTickets[gameNumber][silverTicketHash].contains(msg.sender)) {
+            totalPrize += payouts[1];
+        }
+
+        // Check Bronze prize
+        bytes32 bronzeTicketHash = computeBronzeTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1]);
+        if (bronzeTickets[gameNumber][bronzeTicketHash].contains(msg.sender)) {
+            totalPrize += payouts[2];
+        }
+
+        // Check Loyalty prize
+        if (msg.sender == gameWinnerLoyaltyPrize[gameNumber]) {
+            totalPrize += payouts[3];
+        }
+
+        require(totalPrize > 0, "No prize to claim");
+
+        prizesClaimed[gameNumber][msg.sender] = true;
+        payable(msg.sender).transfer(totalPrize);
+
+        emit PrizeClaimed(gameNumber, msg.sender, totalPrize);
+
+        // If the claimer won the jackpot, mint the NFT
+        if (goldTickets[gameNumber][goldTicketHash].contains(msg.sender)) {
+            mintWinningNFT(gameNumber, msg.sender);
+        }
     }
 
-    function mintWinningNFT(uint256 gameNumber, uint256[] memory numbers, uint256 powerball) external nonReentrant {
-        require(gameDrawn[gameNumber], "Game results not yet available");
+    function mintWinningNFT(uint256 gameNumber, address winner) internal {
+        require(gameDrawCompleted[gameNumber], "Game results not yet available");
 
-        // Verify that the player has the winning ticket
-        bytes32 ticketHash = computeTicketHash(numbers, powerball);
-        PrizeCategory storage jackpotCategory = gamePrizeCategories[gameNumber][1];
-        require(ticketHash == jackpotCategory.winningHash, "Not a winning ticket");
+        // Generate a unique tokenId
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(gameNumber, winner)));
 
-        // Verify that the player has not already minted an NFT
-        // You may need to implement a mapping to track which players have minted NFTs
+        // Mint the NFT
+        _safeMint(winner, tokenId);
 
-        // Mint NFT
-        uint256 tokenId = totalSupply() + 1;
-        _safeMint(msg.sender, tokenId);
+        // Generate and set the token URI
+        string memory tokenURI = nftGenerator.generateNFTMetadata(gameNumber, gameWinningNumbers[gameNumber]);
+        _setTokenURI(tokenId, tokenURI);
 
-        // Optionally set token URI
-        // _setTokenURI(tokenId, "ipfs://...");
-
-        emit NFTMinted(msg.sender, tokenId);
+        emit NFTMinted(winner, tokenId, gameNumber);
     }
 
     function releaseUnclaimedPrizes(uint256 gameNumber) external {
-        require(gameDrawCompleted[gameNumber], "Prizes not yet distributed for this game");
-        
-        emit UnclaimedPrizeTransferred(i, currentGameNumber + 1, game.unclaimedPrize);
+        require(gameDrawCompleted[gameNumber], "Game not completed");
+        require(block.number >= gameDrawnBlock[gameNumber] + BLOCKS_PER_YEAR, "Must wait one year");
+        require(gamePrizePool[gameNumber] > 0, "No unclaimed prizes");
 
-        require(totalReleased > 0, "No prizes to release");
+        uint256 unclaimedAmount = gamePrizePool[gameNumber];
+        gamePrizePool[gameNumber] = 0;
+        gamePrizePool[currentGameNumber] += unclaimedAmount;
+
+        emit UnclaimedPrizesReleased(gameNumber, currentGameNumber, unclaimedAmount);
     }
-    /*  if 3+ jackpots, increase the difficulty. if 3+ no jackpots, decrease the difficulty. */
+
     function changeDifficulty(uint256 gameNumber) internal {
-        bool jackpotWon = gameJackpotWon[gameNumber];
+        require(currentGameNumber > 3, "Not enough games played");
+        require(currentGameNumber > lastDifficultyChangeGame + 3, "Too soon to change difficulty");
 
-        if (jackpotWon) {
-            consecutiveJackpots++;
-            consecutiveNoJackpots = 0;
-        } else {
-            consecutiveNoJackpots++;
-            consecutiveJackpots = 0;
-        }
+        bool allJackpots = true;
+        bool noJackpots = true;
 
-        Difficulty newDifficulty = gameDifficulty[gameNumber + 1]; // Next game's difficulty
-
-        if (jackpotWon) {
-            if (consecutiveJackpots >= 3 && gameDifficulty[gameNumber + 1] != Difficulty.Hard) {
-                if (gameDifficulty[gameNumber + 1] == Difficulty.Easy) {
-                    newDifficulty = Difficulty.Medium;
-                } else if (gameDifficulty[gameNumber + 1] == Difficulty.Medium) {
-                    newDifficulty = Difficulty.Hard;
-                }
-                consecutiveJackpots = 0;
-                emit DifficultyChanged(gameNumber + 1, newDifficulty);
+        for (uint256 i = currentGameNumber - 3; i < currentGameNumber; i++) {
+            if (!gameJackpotWon[i]) {
+                allJackpots = false;
             }
-        } else {
-            if (consecutiveNoJackpots >= 3 && gameDifficulty[gameNumber + 1] != Difficulty.Easy) {
-                if (gameDifficulty[gameNumber + 1] == Difficulty.Hard) {
-                    newDifficulty = Difficulty.Medium;
-                } else if (gameDifficulty[gameNumber + 1] == Difficulty.Medium) {
-                    newDifficulty = Difficulty.Easy;
-                }
-                consecutiveNoJackpots = 0;
-                emit DifficultyChanged(gameNumber + 1, newDifficulty);
+            if (gameJackpotWon[i]) {
+                noJackpots = false;
             }
         }
 
-        // Update the next game's difficulty if changed
-        gameDifficulty[gameNumber + 1] = newDifficulty;
+        Difficulty currentDifficulty = gameDifficulty[currentGameNumber];
+        Difficulty newDifficulty = currentDifficulty;
+
+        if (allJackpots && currentDifficulty != Difficulty.Hard) {
+            newDifficulty = Difficulty(uint(currentDifficulty) + 1);
+        } else if (noJackpots && currentDifficulty != Difficulty.Easy) {
+            newDifficulty = Difficulty(uint(currentDifficulty) - 1);
+        }
+
+        if (newDifficulty != currentDifficulty) {
+            gameDifficulty[currentGameNumber + 1] = newDifficulty;
+            lastDifficultyChangeGame = currentGameNumber;
+            emit DifficultyChanged(currentGameNumber + 1, newDifficulty);
+        }
+    }
+
+    function getCurrentGameInfo() public view returns (
+        uint256 gameNumber,
+        Difficulty difficulty,
+        uint256 prizePool,
+        uint256 drawTime
+    ) {
+        gameNumber = currentGameNumber;
+        difficulty = gameDifficulty[gameNumber];
+        prizePool = gamePrizePool[gameNumber];
+        drawTime = lastDrawTime + DRAW_INTERVAL;
     }
 
     receive() external payable {}
 }
-
-// get randao for a game
-// get current game difficulty
-// get current prize pool
-// get current game number
-// get last draw time
