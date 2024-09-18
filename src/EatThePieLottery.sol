@@ -32,7 +32,10 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     uint256 public constant SILVER_PLACE_PERCENTAGE = 2500;
     uint256 public constant BRONZE_PLACE_PERCENTAGE = 1000;
     uint256 public constant LOYALTY_PERCENTAGE = 400;
+    /* fees are 1%, capped at max 100ETH */
     uint256 public constant FEE_PERCENTAGE = 100;
+    uint256 public constant FEE_MAX_IN_ETH = 100 ether;
+
     /* lottery ball numbers (max allowed numbers) */
     uint256 public constant EASY_MAX = 50;
     uint256 public constant EASY_ETHERBALL_MAX = 5;
@@ -359,6 +362,14 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         uint256 loyaltyPrize = (prizePool * LOYALTY_PERCENTAGE) / 10000;
         uint256 fee = (prizePool * FEE_PERCENTAGE) / 10000;
 
+        // Check if the fee exceeds the max fee cap
+        bool feeCapReached = fee > FEE_MAX_IN_ETH;
+    
+        if (feeCapReached) {
+            fee = FEE_MAX_IN_ETH;
+            gamePrizePool[currentGameNumber] += unclaimedPrize;
+        }
+
         uint256[4] memory winningNumbers = gameWinningNumbers[gameNumber];
         bytes32 goldTicketHash = computeGoldTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
         bytes32 silverTicketHash = computeSilverTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2]);
@@ -429,11 +440,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         emit GamePrizePayout(gameNumber, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyPrize);
 
         // Transfer fees to the fee recipient
-        if (feeRecipient != address(0)) {
-            payable(feeRecipient).transfer(fee);
-        } else {
-            gamePrizePool[currentGameNumber] += fee;
-        }
+        payable(feeRecipient).transfer(fee);
     }
 
     function claimPrize(uint256 gameNumber) external {
