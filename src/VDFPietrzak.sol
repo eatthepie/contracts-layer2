@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
-// pragma solidity 0.8.26;
-pragma solidity ^0.8.0;
+pragma solidity 0.8.25;
 
 import "./libraries/PietrzakLibrary.sol";
 
@@ -8,90 +7,36 @@ interface IMinimalPietrzak {
     function verifyPietrzak(
         BigNumber[] memory v,
         BigNumber memory x,
-        BigNumber memory y,
-        BigNumber memory n,
-        uint256 delta,
-        uint256 T
+        BigNumber memory y
     ) external view returns (bool);
 }
 
-contract MinimalPietrzakHalving {
-    function verifyPietrzak(
-        BigNumber[] memory v,
-        BigNumber memory x,
-        BigNumber memory y,
-        BigNumber memory n,
-        uint256 delta,
-        uint256 T
-    ) external returns (bool) {
-        return PietrzakLibraryMeasureHalvingGas.verify(v, x, y, n, delta, T);
-    }
-}
+contract VDFPietrzak is IMinimalPietrzak {
+    using BigNumbers for BigNumbers.BigNumber;
 
-contract MinimalPietrzakModExp {
-    function verifyPietrzak(
-        BigNumber[] memory v,
-        BigNumber memory x,
-        BigNumber memory y,
-        BigNumber memory n,
-        uint256 delta,
-        uint256 T
-    ) external returns (bool) {
-        return PietrzakLibraryMeasureModExpGas.verify(v, x, y, n, delta, T);
-    }
-}
+    BigNumbers.BigNumber private n;
+    uint256 public immutable delta;
+    uint256 public immutable T;
 
-contract MinimalPietrzakHalvingReturnGas {
-    function verifyPietrzak(
-        BigNumber[] memory v,
-        BigNumber memory x,
-        BigNumber memory y,
-        BigNumber memory n,
-        uint256 delta,
-        uint256 T
-    ) external view returns (uint256) {
-        return
-            PietrzakLibraryMeasureHalvingGas.verifyReturnGas(
-                v,
-                x,
-                y,
-                n,
-                delta,
-                T
-            );
-    }
-}
+    constructor(
+        BigNumbers.BigNumber memory _n,
+        uint256 _delta,
+        uint256 _T
+    ) {
+        require(_n.val.length > 0 && _n.bitlen > 0, "Invalid modulus n");
+        require(_T > 0, "T must be greater than zero");
+        require(_delta < 256, "delta must be less than 256");
 
-contract MinimalPietrzakModExpReturnGas {
-    function verifyPietrzak(
-        BigNumber[] memory v,
-        BigNumber memory x,
-        BigNumber memory y,
-        BigNumber memory n,
-        uint256 delta,
-        uint256 T
-    ) external view returns (uint256) {
-        return
-            PietrzakLibraryMeasureModExpGas.verifyReturnGas(
-                v,
-                x,
-                y,
-                n,
-                delta,
-                T
-            );
+        n = _n;
+        delta = _delta;
+        T = _T;
     }
-}
 
-contract MinimalPietrzak {
     function verifyPietrzak(
-        BigNumber[] memory v,
-        BigNumber memory x,
-        BigNumber memory y,
-        BigNumber memory n,
-        uint256 delta,
-        uint256 T
-    ) external view returns (bool) {
+        BigNumbers.BigNumber[] memory v,
+        BigNumbers.BigNumber memory x,
+        BigNumbers.BigNumber memory y
+    ) external view override returns (bool) {
         return PietrzakLibrary.verify(v, x, y, n, delta, T);
     }
 }

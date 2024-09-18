@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity 0.8.25;
 
 // Import OpenZeppelin contracts for security best practices
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -76,12 +76,11 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     /* only admin capability - can change ticket price if needed. will have a 4 game buffer */
     uint256 public newTicketPrice;
     uint256 public newTicketPriceGameNumber;
-    /* new VDF N input */
-    /* only admin capability - can change VDF N input if needed. will have a 10 game buffer */
-    /* needed if RSA 2048 security gets busted in the next 2 decades */
-    uint256 public vdfModN;
-    uint256 public newVDFModulus;
-    uint256 public newVDFModulusNumber;
+    /* new VDF contract */
+    /* needed if RSA 2048 security gets busted in the next 3 decades */
+    /* in the event of a new VDF prover is needed to change security params of (N, T, or delta), we allow it with a 10 game buffer for anyone to verify the new VDF contract. */
+    address public newVDFContractAddress;
+    uint256 public newVDFContractAddressGameNumber;
 
     // game state
     mapping(uint256 => uint256) public gamePrizePool;
@@ -93,10 +92,10 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     mapping(uint256 => mapping(bytes32 => address[])) public goldTickets;
     mapping(uint256 => mapping(bytes32 => address[])) public silverTickets;
     mapping(uint256 => mapping(bytes32 => address[])) public bronzeTickets;
-    // generate lottery numbers - using prevRandao & VDF
+    // lottery numbers
     mapping(uint256 => bool) public gameDrawInitiated;
-    mapping(uint256 => bytes32) public gameRandao;
-    mapping(uint256 => uint256) public gameRandaoBlockMin;
+    mapping(uint256 => uint256) public gameRandom;
+    mapping(uint256 => uint256) public gameRandomBlock;
     mapping(uint256 => bool) public gameVDFValid;
     // game results
     mapping(uint256 => bool) public gameDrawCompleted;
@@ -108,7 +107,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     // Events
     event TicketPurchased(address indexed player, uint256 gameNumber, uint256[3] numbers, uint256 etherball);
     event DrawInitiated(uint256 gameNumber);
-    event RandaoSet(uint256 gameNumber, bytes32 randao);
+    event RandomSet(uint256 gameNumber, uint256 random);
     event VDFProofSubmitted(address indexed submitter, uint256 gameNumber);
     event PrizesDistributed(uint256 gameNumber);
     event DifficultyChanged(uint256 gameNumber, Difficulty newDifficulty);
@@ -121,14 +120,12 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     event UnclaimedPrizesReleased(uint256 fromGame, uint256 toGame, uint256 amount);
 
     constructor(address _vdfContractAddress, address _nftGeneratorAddress, address _feeRecipient) {
-        /* RSA_2048_SECRET_KEY needs to be set in vdf contract and must be updatable */
         vdfContract = VDFPietrzak(_vdfContractAddress);
         nftGenerator = LotteryNFTGenerator(_nftGeneratorAddress);
         ticketPrice = 0.1 ether;
         currentGameNumber = 1;
         gameDifficulty[currentGameNumber] = Difficulty.Easy;
         lastDrawTime = block.timestamp;
-        vdfModN = RSA_2048_SECRET_KEY;
         feeRecipient = _feeRecipient;
     }
 
@@ -236,13 +233,14 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         emit TicketPriceChangeScheduled(_newPrice, newTicketPriceGameNumber);
     }
 
-    /* set new VDF modulus N */
-    function setVDFModulus(uint256 _newModulus) external onlyOwner {
-        require(_newModulus > 0, "Modulus must be positive");
-        newVDFModulus = _newModulus;
-        newVDFModulusNumber = currentGameNumber + 10;
+    /* set new VDF Contract */
+    function setNewVDFContract(address _newVDFContract) external onlyOwner {
+        require(_newVDFContract != address(0), "Address must be valid");
+        newVDFContractAddress = _newVDFContract;
+        newVDFContractAddressGameNumber = currentGameNumber + 10;
     }
 
+    /* set new fee recipient address */
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         require(_feeRecipient != address(0), "Invalid fee recipient address");
         feeRecipient = _feeRecipient;
@@ -277,7 +275,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         uint256 currentEpoch = currentBlock / BLOCKS_PER_EPOCH;
         uint256 targetEpoch = currentEpoch + EPOCH_OFFSET;
         uint256 targetSetBlock = (targetEpoch * BLOCKS_PER_EPOCH) + BLOCK_OFFSET;
-        gameRandaoBlockMin[gameNumber] = targetSetBlock;
+        gameRandomBlock[gameNumber] = targetSetBlock;
 
         // check difficulty changes
         currentGameNumber += 1;
@@ -292,30 +290,68 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
             ticketPrice = newTicketPrice;
         }
 
-        // check vdf modulus changes
-        if (newVDFModulus && newVDFModulusNumber == currentGameNumber) {
-            vdfModN = newVDFModulus;
+        // check vdf contract changes
+        if (newVDFContractAddress && newVDFContractAddressGameNumber == currentGameNumber) {
+            vdfContract = VDFPietrzak(newVDFContractAddress);
         }
 
         emit DrawInitiated(gameNumber);
     }
 
-    /* when the buffer period has passed, set block.prevRandao as seed for VDF func. anyone can take this and compute the VDF offchain. */
-    function setRandao(uint256 gameNumber) external {
+    /* when the buffer period has passed, set the random value (g) for VDF */
+    function setRandom(uint256 gameNumber) external {
         require(gameDrawInitiated[gameNumber], "Draw not initiated for this game");
-        require(block.number >= gameRandaoBlockMin[gameNumber], "Buffer period not yet passed");
-        require(gameRandao[gameNumber] == bytes32(0), "Randao already set for this game");
+        require(block.number >= gameRandomBlock[gameNumber], "Buffer period not yet passed");
+        require(gameRandom[gameNumber] == uint(0), "Random already set for this game");
 
-        gameRandao[gameNumber] = block.prevrandao;
-        emit RandaoSet(gameNumber, randao);
+        uint256 random = deriveG(block.prevrandao);
+        require(validateG(random), "Invalid random value");
+
+        gameRandom[gameNumber] = random;
+        emit RandomSet(gameNumber, random);
     }
 
-    function submitVDFProof(uint256 gameNumber, bytes memory proof) external nonReentrant {
-        require(gameRandao[gameNumber] != bytes32(0), "Randao not set for this game");
+    // Derive random number g from prevRandao. Ensure g is a good prime.
+    function deriveG(bytes32 prevrandao) internal pure returns (uint256) {
+        uint256 h = uint256(prevrandao);
+        uint256 hashed = uint256(keccak256(abi.encodePacked(h)));
+        // Map to [2, N-1] to exclude 0 and 1
+        uint256 g = (hashed % (N - 2)) + 2;
+        return g;
+    }
+    
+    /* 
+        Validate g with basic and probabilistic checks to ensure it is a good prime.
+        Eliminates possible small primes as factors of g^prime mod N.
+    */
+    function validateG(uint256 g) internal pure returns (bool) {        
+        uint256[10] memory smallPrimes = [uint256(2), 3, 5, 7, 11, 13, 17, 19, 23, 29];
+        
+        for (uint256 i = 0; i < smallPrimes.length; i++) {
+            uint256 prime = smallPrimes[i];
+            if (expmod(g, prime, N) == 1) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    // Modular exponentiation using built-in opcode
+    function expmod(uint256 base, uint256 exponent, uint256 modulus) internal pure returns (uint256 result) {
+        assembly {
+            result := expmod(base, exponent, modulus)
+        }
+    }
+
+    function submitVDFProof(uint256 gameNumber, BigNumbers.BigNumber[] memory v, BigNumbers.BigNumber memory y) external nonReentrant {
+        require(gameRandom[gameNumber] != uint(0), "Random value not set for this game");
         require(!gameVDFValid[gameNumber], "VDF proof already submitted for this game");
 
-        // Validate VDF proof using the VDF Pietrzak contract
-        bool isValid = vdfContract.verifyVDF(proof, block.prevrandao);
+        // VDF Verification
+        bytes memory xBytes = abi.encodePacked(gameRandom[gameNumber]);
+        BigNumbers.BigNumber x = BigNumbers.init(xBytes),
+        bool isValid = vdfContract.verifyVDF(v, x, y);
         require(isValid, "Invalid VDF proof");
 
         gameVDFValid[gameNumber] = true;
@@ -328,10 +364,10 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         uint256 maxNumber;
         uint256 maxEtherball;
 
-        if (currentDifficulty == Difficulty.Easy) {
+        if (gameDifficulty[gameNumber] == Difficulty.Easy) {
             maxNumber = 25;
             maxEtherball = 10;
-        } else if (currentDifficulty == Difficulty.Medium) {
+        } else if (gameDifficulty[gameNumber] == Difficulty.Medium) {
             maxNumber = 50;
             maxEtherball = 20;
         } else {
