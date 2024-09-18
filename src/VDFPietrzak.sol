@@ -2,6 +2,7 @@
 pragma solidity 0.8.25;
 
 import "./libraries/PietrzakLibrary.sol";
+import "./libraries/BigNumbers.sol";
 
 interface IMinimalPietrzak {
     function verifyPietrzak(
@@ -14,7 +15,7 @@ interface IMinimalPietrzak {
 contract VDFPietrzak is IMinimalPietrzak {
     using BigNumbers for BigNumbers.BigNumber;
 
-    BigNumbers.BigNumber private n;
+    BigNumbers.BigNumber public n;
     uint256 public immutable delta;
     uint256 public immutable T;
 
