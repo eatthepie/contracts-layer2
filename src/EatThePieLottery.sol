@@ -101,12 +101,13 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     event DrawInitiated(uint256 gameNumber, uint256 targetSetBlock);
     event RandomSet(uint256 gameNumber, uint256 random);
     event VDFProofSubmitted(address indexed submitter, uint256 gameNumber);
+    event WinningNumbersSet(uint256 indexed gameNumber, uint256[4] winningNumbers);
     event PrizesDistributed(uint256 gameNumber);
     event DifficultyChanged(uint256 gameNumber, Difficulty newDifficulty);
     event TicketsPurchased(address indexed player, uint256 gameNumber, uint256 ticketCount);
     event TicketPriceChangeScheduled(uint256 newPrice, uint256 effectiveGameNumber);
     event UnclaimedPrizeTransferred(uint256 fromGame, uint256 toGame, uint256 amount);
-    event GamePrizePayout(uint256 gameNumber, uint256 goldPrize, uint256 silverPrize, uint256 bronzePrize, uint256 loyaltyPrize);
+    event GamePrizePayoutInfo(uint256 gameNumber, uint256 goldPrize, uint256 silverPrize, uint256 bronzePrize, uint256 loyaltyPrize);
     event FeeRecipientChanged(address newFeeRecipient);
     event PrizeClaimed(uint256 gameNumber, address player, uint256 amount);
     event LoyaltyPrizeDistributed(uint256 gameNumber, address[] winners, uint256 prizePerWinner);
@@ -127,11 +128,26 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     // ticketing
     function buyTicket(uint256[3] memory numbers, uint256 etherball) external payable nonReentrant {
         require(msg.value == ticketPrice, "Incorrect ticket price");
+        require(gameDrawInitiated[gameNumber] != true, "Draw already initiated for current game");
+
+        _processSingleTicketPurchase(numbers, etherball);
+    }
+
+    function buyBulkTickets(uint256[4][] calldata tickets) external payable nonReentrant {
+        uint256 ticketCount = tickets.length;
+        require(ticketCount > 0 && ticketCount <= 1000, "Invalid ticket count");
+        require(msg.value == ticketPrice * ticketCount, "Incorrect total price");
+        require(gameDrawInitiated[gameNumber] != true, "Draw already initiated for current game");
+
+        for (uint256 i = 0; i < ticketCount;) {
+            _processSingleTicketPurchase([tickets[i][0], tickets[i][1], tickets[i][2]], tickets[i][3]);
+            unchecked { ++i; }
+        }
+    }
+
+    function _processSingleTicketPurchase(uint256[3] memory numbers, uint256 etherball) internal {
         require(validateNumbers(numbers, etherball, currentGameNumber), "Invalid numbers");
 
-        uint256 gameNumber = currentGameNumber;
-
-        // buy tickets
         bytes32 goldTicket = computeGoldTicketHash(numbers[0], numbers[1], numbers[2], etherball);
         bytes32 silverTicket = computeSilverTicketHash(numbers[0], numbers[1], numbers[2]);
         bytes32 bronzeTicket = computeBronzeTicketHash(numbers[0], numbers[1]);
@@ -151,84 +167,24 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
             bronzeTicketCounts[gameNumber][bronzeTicket] += 1;
         }
 
-        if (playerLoyaltyCount[msg.sender][gameNumber] == 0) {
-            if (playerLoyaltyCount[msg.sender][currentGameNumber - 1] > 0) {
-                playerLoyaltyCount[msg.sender][currentGameNumber] = playerLoyaltyCount[msg.sender][currentGameNumber - 1] + 1;
-            } else {
-                playerLoyaltyCount[msg.sender][currentGameNumber] = 1;
-            }
-        }
+        _updateLoyaltyCount(msg.sender, currentGameNumber);
+        gamePrizePool[currentGameNumber] += ticketPrice;
 
-        // update prize pool
-        gamePrizePool[gameNumber] += msg.value;
-
-        emit TicketPurchased(msg.sender, gameNumber, numbers, etherball);
+        emit TicketPurchased(msg.sender, currentGameNumber, numbers, etherball);
     }
 
-    function buyBulkTickets(uint256[4][] calldata tickets) external payable nonReentrant {
-        uint256 ticketCount = tickets.length;
-        require(ticketCount > 0 && ticketCount <= 1000, "Invalid ticket count");
-        require(msg.value == ticketPrice * ticketCount, "Incorrect total price");
-
-        uint256 gameNumber = currentGameNumber;
-
-        for (uint256 i = 0; i < ticketCount; i++) {
-            uint256[3] memory numbers = [tickets[i][0], tickets[i][1], tickets[i][2]];
-            uint256 etherball = tickets[i][3];
-
-            require(validateNumbers(numbers, etherball, gameNumber), "Invalid numbers");
-
-            bytes32 goldTicket = computeGoldTicketHash(numbers[0], numbers[1], numbers[2], etherball);
-            bytes32 silverTicket = computeSilverTicketHash(numbers[0], numbers[1], numbers[2]);
-            bytes32 bronzeTicket = computeBronzeTicketHash(numbers[0], numbers[1]);
-
-            if (!goldTicketOwners[gameNumber][goldTicket][msg.sender]) {
-                goldTicketOwners[gameNumber][goldTicket][msg.sender] = true;
-                goldTicketCounts[gameNumber][goldTicket] += 1;
-            }
-
-            if (!silverTicketOwners[gameNumber][silverTicket][msg.sender]) {
-                silverTicketOwners[gameNumber][silverTicket][msg.sender] = true;
-                silverTicketCounts[gameNumber][silverTicket] += 1;
-            }
-
-            if (!bronzeTicketOwners[gameNumber][bronzeTicket][msg.sender]) {
-                bronzeTicketOwners[gameNumber][bronzeTicket][msg.sender] = true;
-                bronzeTicketCounts[gameNumber][bronzeTicket] += 1;
-            }
-
-            emit TicketsPurchased(msg.sender, gameNumber, ticketCount);
+    function _updateLoyaltyCount(address player, uint256 gameNumber) internal {
+        if (playerLoyaltyCount[player][gameNumber] == 0) {
+            playerLoyaltyCount[player][gameNumber] = playerLoyaltyCount[player][gameNumber - 1] > 0 
+                ? playerLoyaltyCount[player][gameNumber - 1] + 1 
+                : 1;
         }
-
-        if (playerLoyaltyCount[msg.sender][gameNumber] == 0) {
-            if (playerLoyaltyCount[msg.sender][currentGameNumber - 1] > 0) {
-                playerLoyaltyCount[msg.sender][currentGameNumber] = playerLoyaltyCount[msg.sender][currentGameNumber - 1] + 1;
-            } else {
-                playerLoyaltyCount[msg.sender][currentGameNumber] = 1;
-            }
-        }
-
-        // Update prize pool
-        gamePrizePool[gameNumber] += msg.value;
     }
 
     function validateNumbers(uint256[3] memory numbers, uint256 etherball, uint256 gameNumber) internal view returns (bool) {
         Difficulty difficulty = gameDifficulty[gameNumber];
-        uint256 maxNumber;
-        uint256 maxEtherball;
+        (uint256 maxNumber, uint256 maxEtherball) = getDifficultyParams(difficulty);
 
-        if (difficulty == Difficulty.Easy) {
-            maxNumber = EASY_MAX;
-            maxEtherball = EASY_ETHERBALL_MAX;
-        } else if (difficulty == Difficulty.Medium) {
-            maxNumber = MEDIUM_MAX;
-            maxEtherball = MEDIUM_ETHERBALL_MAX;
-        } else {
-            maxNumber = HARD_MAX;
-            maxEtherball = HARD_ETHERBALL_MAX;
-        }
-
-        // Check numbers
         for (uint256 i = 0; i < 3; i++) {
             if (numbers[i] < 1 || numbers[i] > maxNumber) {
                 return false;
@@ -242,30 +198,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         return true;
     }
 
-    /* set new ticket price */
-    function setTicketPrice(uint256 _newPrice) external onlyOwner {
-        require(_newPrice > 0, "Price must be positive");
-        newTicketPrice = _newPrice;
-        newTicketPriceGameNumber = currentGameNumber + 4;
-        emit TicketPriceChangeScheduled(_newPrice, newTicketPriceGameNumber);
-    }
-
-    /* set new VDF Contract */
-    function setNewVDFContract(address _newVDFContract, uint256 _newVDFModN) external onlyOwner {
-        require(_newVDFContract != address(0), "Invalid VDF contract address");
-        require(_newVDFModN > 0, "Invalid VDF modulus");
-        newVDFContractAddress = _newVDFContract;
-        newVDFModulusN = _newVDFModN;
-        newVDFContractAddressGameNumber = currentGameNumber + 10;
-    }
-
-    /* set new fee recipient address */
-    function setFeeRecipient(address _feeRecipient) external onlyOwner {
-        require(_feeRecipient != address(0), "Invalid fee recipient address");
-        feeRecipient = _feeRecipient;
-        emit FeeRecipientChanged(_feeRecipient);
-    }
-
+    // ticket hashes
     function computeBronzeTicketHash(uint256 numberOne, uint256 numberTwo) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(numberOne, numberTwo));
     }
@@ -293,32 +226,40 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         uint256 currentEpoch = currentBlock / BLOCKS_PER_EPOCH;
         uint256 targetEpoch = currentEpoch + EPOCH_OFFSET;
         uint256 targetSetBlock = (targetEpoch * BLOCKS_PER_EPOCH) + BLOCK_OFFSET;
+        require(targetSetBlock > currentBlock, "Invalid target block");
         gameRandomBlock[gameNumber] = targetSetBlock;
 
         // check difficulty changes
         currentGameNumber += 1;
-        if (newDifficulty && newDifficultyGame == currentGameNumber) {
-            gameDifficulty[currentGameNumber] = newDifficulty;
+        uint256 newGameNumber = currentGameNumber;
+
+        if (newDifficulty != Difficulty(0) && newDifficultyGame == newGameNumber) {
+            gameDifficulty[newGameNumber] = newDifficulty;
+            newDifficulty = Difficulty(0);
         } else {
-            gameDifficulty[currentGameNumber] = gameDifficulty[gameNumber];
+            gameDifficulty[newGameNumber] = gameDifficulty[gameNumber];
         }
 
         // check ticket price changes
-        if (newTicketPrice && newTicketPriceGameNumber == currentGameNumber) {
+        if (newTicketPrice != 0 && newTicketPriceGameNumber == newGameNumber) {
+            require(newTicketPrice > 0, "Invalid new ticket price");
             ticketPrice = newTicketPrice;
+            newTicketPrice = 0;
         }
 
         // check vdf contract changes
-        if (newVDFContractAddress && newVDFContractAddressGameNumber == currentGameNumber) {
+        if (newVDFContractAddress != address(0) && newVDFContractAddressGameNumber == newGameNumber) {
+            require(newVDFModulusN > 0, "Invalid new VDF modulus");
             vdfContract = VDFPietrzak(newVDFContractAddress);
             vdfModulusN = newVDFModulusN;
+            newVDFContractAddress = address(0);
         }
 
         emit DrawInitiated(gameNumber, targetSetBlock);
     }
 
     /* when the buffer period has passed, set the random value (g) for VDF */
-    function setRandom(uint256 gameNumber) external setRandom {
+    function setRandom(uint256 gameNumber) external {
         require(gameDrawInitiated[gameNumber], "Draw not initiated for this game");
         require(block.number >= gameRandomBlock[gameNumber], "Buffer period not yet passed");
         require(gameRandom[gameNumber] == uint(0), "Random already set for this game");
@@ -334,15 +275,12 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     function deriveG(bytes32 prevrandao) internal pure returns (uint256) {
         uint256 h = uint256(prevrandao);
         uint256 hashed = uint256(keccak256(abi.encodePacked(h)));
-        // Map to [2, N-1] to exclude 0 and 1
-        uint256 g = (hashed % (vdfModulusN - 2)) + 2;
+        uint256 g = (hashed % (vdfModulusN - 2)) + 2; // Map to [2, N-1] to exclude 0 and 1
         return g;
     }
 
-    /* 
-        Validate g with basic and probabilistic checks to ensure it is a good prime.
-        Eliminates possible small primes as factors of g^prime mod N.
-    */
+    // Validate g with basic and probabilistic checks to ensure it is a good prime.
+    // Eliminates possible small primes as factors of g^prime mod N.
     function validateG(uint256 g) internal pure returns (bool) {        
         uint256[10] memory smallPrimes = [uint256(2), 3, 5, 7, 11, 13, 17, 19, 23, 29];
         
@@ -387,38 +325,40 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         emit VDFProofSubmitted(msg.sender, gameNumber);
     }
 
-    // Set winning numbers for the game
     function setWinningNumbers(uint256 gameNumber, bytes memory vdfOutput) internal {
         Difficulty difficulty = gameDifficulty[gameNumber];
-        uint256 maxNumber;
-        uint256 maxEtherball;
-
-        if (difficulty == Difficulty.Easy) {
-            maxNumber = EASY_MAX;
-            maxEtherball = EASY_ETHERBALL_MAX;
-        } else if (difficulty == Difficulty.Medium) {
-            maxNumber = MEDIUM_MAX;
-            maxEtherball = MEDIUM_ETHERBALL_MAX;
-        } else {
-            maxNumber = HARD_MAX;
-            maxEtherball = HARD_ETHERBALL_MAX;
-        }
+        (uint256 maxNumber, uint256 maxEtherball) = getDifficultyParams(difficulty);
 
         // Use the vdfOutput to generate random numbers
         bytes32 randomSeed = keccak256(vdfOutput);
+        uint256[4] memory winningNumbers;
 
-        uint256[3] memory winningNumbers;
-        for (uint256 i = 0; i < 3; i++) {
-            winningNumbers[i] = (uint256(keccak256(abi.encodePacked(randomSeed, i))) % maxNumber) + 1;
+        for (uint256 i = 0; i < 4; i++) {
+            uint256 maxValue = i < 3 ? maxNumber : maxEtherball;
+            winningNumbers[i] = generateUnbiasedRandomNumber(randomSeed, i, maxValue);
         }
-        winningNumbers[3] = (uint256(keccak256(abi.encodePacked(randomSeed, 3))) % maxEtherball) + 1;
+
         gameWinningNumbers[gameNumber] = winningNumbers;
+        emit WinningNumbersSet(gameNumber, winningNumbers);
     }
 
-    // Distribute prizes for the game
+    function generateUnbiasedRandomNumber(bytes32 seed, uint256 nonce, uint256 maxValue) internal pure returns (uint256) {
+        uint256 nBits = 256;
+        uint256 nBytes = 32;
+        uint256 maxAllowed = type(uint256).max - (type(uint256).max % maxValue);
+
+        while (true) {
+            uint256 randomNumber = uint256(keccak256(abi.encodePacked(seed, nonce)));
+            if (randomNumber < maxAllowed) {
+                return (randomNumber % maxValue) + 1;
+            }
+            nonce++;
+        }
+    }
+
     function calculatePayouts(uint256 gameNumber) external nonReentrant {
         require(gameVDFValid[gameNumber], "VDF proof not yet validated for this game");
-        require(!gameDrawCompleted[gameNumber], "Payouts already calculated for this game");
+        require(gameDrawCompleted[gameNumber] != true, "Payouts already calculated for this game");
 
         uint256 prizePool = gamePrizePool[gameNumber];
         uint256 goldPrize = (prizePool * GOLD_PERCENTAGE) / 10000;
@@ -446,20 +386,17 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         uint256 silverPrizePerWinner = silverWinnerCount > 0 ? silverPrize / silverWinnerCount : 0;
         uint256 bronzePrizePerWinner = bronzeWinnerCount > 0 ? bronzePrize / bronzeWinnerCount : 0;
 
+        // Calculate actual paid out amounts (which may be less than the total prize due to rounding down)
+        uint256 goldPaidOut = goldPrizePerWinner * goldWinnerCount;
+        uint256 silverPaidOut = silverPrizePerWinner * silverWinnerCount;
+        uint256 bronzePaidOut = bronzePrizePerWinner * bronzeWinnerCount;
+
         // Calculate unclaimed prizes
-        uint256 totalPaidOut = fee;
+        uint256 totalPaidOut = fee + goldPaidOut + silverPaidOut + bronzePaidOut;
 
+        // any winner means loyalty prize is paid out
         if (bronzeWinnerCount > 0) {
-            totalPaidOut += bronzePrize;
             totalPaidOut += loyaltyPrize;
-        }
-
-        if (silverWinnerCount > 0) {
-            totalPaidOut += silverPrize;
-        }
-
-        if (goldWinnerCount > 0) {
-            totalPaidOut += goldPrize;
         }
 
         uint256 unclaimedPrize = prizePool - totalPaidOut;
@@ -479,7 +416,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         gameDrawCompleted[gameNumber] = true;
 
         // Emit event with payout information
-        emit GamePrizePayout(gameNumber, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyPrize);
+        emit GamePrizePayoutInfo(gameNumber, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyPrize);
 
         // Transfer fees to the fee recipient
         (bool success, ) = payable(feeRecipient).call{value: fee}("");
@@ -487,8 +424,8 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     }
 
     function claimPrize(uint256 gameNumber) external nonReentrant {
-        require(gameDrawCompleted[gameNumber], "Prizes not yet calculated for this game");
-        require(!prizesClaimed[gameNumber][msg.sender], "Prize already claimed");
+        require(gameDrawCompleted[gameNumber] == true, "Game draw not completed yet");
+        require(prizesClaimed[gameNumber][msg.sender] != true, "Prize already claimed");
 
         uint256[4] memory payouts = gamePayouts[gameNumber];
         uint256 totalPrize = 0;
@@ -567,7 +504,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     }
 
     function mintWinningNFT(uint256 gameNumber, address winner) internal {
-        require(gameDrawCompleted[gameNumber], "Game results not yet available");
+        require(gameDrawCompleted[gameNumber] == true, "Game draw not completed yet");
 
         // Generate a unique tokenId
         uint256 tokenId = uint256(keccak256(abi.encodePacked(gameNumber, winner)));
@@ -583,9 +520,9 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     }
 
     function releaseUnclaimedPrizes(uint256 gameNumber) external {
-        require(gameDrawCompleted[gameNumber], "Game not completed");
-        require(block.number >= gameDrawnBlock[gameNumber] + BLOCKS_PER_YEAR, "Must wait one year");
-        require(gamePrizePool[gameNumber] > 0, "No unclaimed prizes");
+        require(gameDrawCompleted[gameNumber] == true, "Game must be completed");
+        require(block.number >= gameDrawnBlock[gameNumber] + BLOCKS_PER_YEAR && gameDrawnBlock[gameNumber] != 0, "Must wait 1 year after game");
+        require(gamePrizePool[gameNumber] > 0, "Prize pool must be non-zero");
 
         uint256 unclaimedAmount = gamePrizePool[gameNumber];
         gamePrizePool[gameNumber] = 0;
@@ -621,17 +558,56 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         }
     }
 
+    // helper functions
     function getCurrentGameInfo() public view returns (
         uint256 gameNumber,
         Difficulty difficulty,
         uint256 prizePool,
-        uint256 drawTime
+        uint256 drawTime,
+        uint256 timeUntilDraw
     ) {
         gameNumber = currentGameNumber;
         difficulty = gameDifficulty[gameNumber];
         prizePool = gamePrizePool[gameNumber];
         drawTime = lastDrawTime + DRAW_INTERVAL;
+        timeUntilDraw = drawTime > block.timestamp ? drawTime - block.timestamp : 0;
     }
 
-    receive() external payable {}
+    function getDifficultyParams(Difficulty difficulty) internal pure returns (uint256 maxNumber, uint256 maxEtherball) {
+        if (difficulty == Difficulty.Easy) {
+            return (EASY_MAX, EASY_ETHERBALL_MAX);
+        } else if (difficulty == Difficulty.Medium) {
+            return (MEDIUM_MAX, MEDIUM_ETHERBALL_MAX);
+        } else {
+            return (HARD_MAX, HARD_ETHERBALL_MAX);
+        }
+    }
+
+    // admin functions
+    function setTicketPrice(uint256 _newPrice) external onlyOwner {
+        require(_newPrice > 0, "Price must be positive");
+        require(_newPrice != ticketPrice, "New price must be different");
+        newTicketPrice = _newPrice;
+        newTicketPriceGameNumber = currentGameNumber + 10;
+        emit TicketPriceChangeScheduled(_newPrice, newTicketPriceGameNumber);
+    }
+
+    function setNewVDFContract(address _newVDFContract, uint256 _newVDFModN) external onlyOwner {
+        require(_newVDFContract != address(0) && _newVDFContract != address(vdfContract), "Invalid VDF contract address");
+        require(_newVDFModN > 0, "Invalid VDF modulus");
+        newVDFContractAddress = _newVDFContract;
+        newVDFModulusN = _newVDFModN;
+        newVDFContractAddressGameNumber = currentGameNumber + 10;
+    }
+
+    function setFeeRecipient(address _newFeeRecipient) external onlyOwner {
+        require(_newFeeRecipient != address(0) && _newFeeRecipient != feeRecipient, "Invalid fee recipient address");
+        feeRecipient = _newFeeRecipient;
+        emit FeeRecipientChanged(_newFeeRecipient);
+    }
+
+    // fallback send ETH to prize pool
+    receive() external payable {
+        gamePrizePool[currentGameNumber] += msg.value;
+    }
 }
