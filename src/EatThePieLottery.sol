@@ -385,7 +385,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
 
         // VDF Verification
         bytes memory xBytes = abi.encodePacked(gameRandom[gameNumber]);
-        BigNumbers.BigNumber x = BigNumbers.init(xBytes),
+        BigNumbers.BigNumber x = BigNumbers.init(xBytes);
         bool isValid = vdfContract.verifyVDF(v, x, y);
         require(isValid, "Invalid VDF proof");
 

@@ -10,7 +10,7 @@ library PietrzakLibrary {
         BigNumbers.BigNumber[] memory v,
         BigNumbers.BigNumber memory x,
         BigNumbers.BigNumber memory y,
-        BigNumber memory n,
+        BigNumbers.BigNumber memory n,
         uint256 delta,
         uint256 T
     ) internal view returns (bool) {
@@ -21,7 +21,6 @@ library PietrzakLibrary {
         require(x.val.length > 0 && x.bitlen > 0, "x must be valid");
         require(y.val.length > 0 && y.bitlen > 0, "y must be valid");
 
-        uint256 i;
         uint256 tau = log2(T);
         uint256 iMax = tau - delta;
 

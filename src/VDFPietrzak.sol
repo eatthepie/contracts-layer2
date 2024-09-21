@@ -6,9 +6,9 @@ import "./libraries/BigNumbers.sol";
 
 interface IMinimalPietrzak {
     function verifyPietrzak(
-        BigNumber[] memory v,
-        BigNumber memory x,
-        BigNumber memory y
+        BigNumbers.BigNumber[] memory v,
+        BigNumbers.BigNumber memory x,
+        BigNumbers.BigNumber memory y
     ) external view returns (bool);
 }
 
