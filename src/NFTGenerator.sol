@@ -13,7 +13,7 @@ contract NFTGenerator {
 
     mapping(uint256 => NumberSVG) private numberSVGs;
 
-    constructor() ERC721("LotteryNFT", "LNFT") {
+    constructor() ERC721("EatThePieNFT", "ETPNFT") {
         _initializeNumberSVGs();
     }
 
