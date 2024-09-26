@@ -70,9 +70,9 @@ contract EatThePieLotteryTest is Test {
         testSetRandom();
 
         // Create a mock VDF proof (you'll need to implement this based on your VDF logic)
-        BigNumbers.BigNumber[] memory v = new BigNumbers.BigNumber[](1);
-        v[0] = BigNumbers.BigNumber(1, new uint256[](1));
-        BigNumbers.BigNumber memory y = BigNumbers.BigNumber(1, new uint256[](1));
+        BigNumber[] memory v = new BigNumber[](1);
+        v[0] = BigNumber(1, new uint256[](1));
+        BigNumber memory y = BigNumber(1, new uint256[](1));
 
         lottery.submitVDFProof(1, v, y);
 
@@ -102,9 +102,9 @@ contract EatThePieLotteryTest is Test {
             lottery.calculatePayouts(lottery.currentGameNumber());
         }
 
-        Difficulty initialDifficulty = lottery.gameDifficulty(lottery.currentGameNumber());
+        EatThePieLottery.Difficulty initialDifficulty = lottery.gameDifficulty(lottery.currentGameNumber());
         lottery.changeDifficulty(lottery.currentGameNumber());
-        Difficulty newDifficulty = lottery.gameDifficulty(lottery.currentGameNumber());
+        EatThePieLottery.Difficulty newDifficulty = lottery.gameDifficulty(lottery.currentGameNumber());
 
         assertTrue(uint(newDifficulty) < uint(initialDifficulty));
     }

@@ -4,13 +4,11 @@ pragma solidity 0.8.25;
 import "./BigNumbers.sol";
 
 library PietrzakLibrary {
-    using BigNumbers for BigNumbers.BigNumber;
-
     function verify(
-        BigNumbers.BigNumber[] memory v,
-        BigNumbers.BigNumber memory x,
-        BigNumbers.BigNumber memory y,
-        BigNumbers.BigNumber memory n,
+        BigNumber[] memory v,
+        BigNumber memory x,
+        BigNumber memory y,
+        BigNumber memory n,
         uint256 delta,
         uint256 T
     ) internal view returns (bool) {
@@ -27,14 +25,14 @@ library PietrzakLibrary {
         require(delta < tau, "delta must be less than tau");
         require(v.length >= iMax, "v array is too short for the number of iterations");
 
-        BigNumbers.BigNumber memory _two = BigNumbers.BigNumber(
+        BigNumber memory _two = BigNumber(
             BigNumbers.BYTESTWO,
             BigNumbers.UINTTWO
         );
 
         uint256 i = 0;
         while (i < iMax) {
-            BigNumbers.BigNumber memory _r = _hash128(x.val, y.val, v[i].val);
+            BigNumber memory _r = _hash128(x.val, y.val, v[i].val);
 
             x = x.modexp(_r, n).modmul(v[i], n);
 
@@ -51,12 +49,12 @@ library PietrzakLibrary {
         uint256 twoPowerOfDelta = 1 << delta;
         bytes memory twoPowerOfDeltaBytes = abi.encodePacked(twoPowerOfDelta);
 
-        BigNumbers.BigNumber memory exponent = _two.modexp(
+        BigNumber memory exponent = _two.modexp(
             BigNumbers.init(twoPowerOfDeltaBytes),
             BigNumbers._powModulus(_two, twoPowerOfDelta)
         );
 
-        BigNumbers.BigNumber memory expectedY = x.modexp(exponent, n);
+        BigNumber memory expectedY = x.modexp(exponent, n);
 
         if (!y.eq(expectedY)) {
             return false;
@@ -108,7 +106,7 @@ library PietrzakLibrary {
         bytes memory a,
         bytes memory b,
         bytes memory c
-    ) internal pure returns (BigNumbers.BigNumber memory) {
+    ) internal pure returns (BigNumber memory) {
         bytes32 hash = keccak256(bytes.concat(a, b, c));
         uint128 lowerHash = uint128(uint256(hash)); // Extract lower 128 bits
         return BigNumbers.init(abi.encodePacked(lowerHash));

@@ -13,7 +13,7 @@ contract DeployEatThePie is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy VDFPietrzak
-        BigNumbers.BigNumber memory n = BigNumbers.BigNumber({
+        BigNumber memory n = BigNumber({
             val: new uint256[](1),
             bitlen: 256
         });

@@ -7,10 +7,8 @@ import "../src/libraries/BigNumbers.sol";
 import "../src/libraries/PietrzakLibrary.sol";
 
 contract VDFPietrzakTest is Test {
-    using BigNumbers for BigNumbers.BigNumber;
-
     VDFPietrzak public vdf;
-    BigNumbers.BigNumber public n;
+    BigNumber public n;
     uint256 public delta;
     uint256 public T;
 
@@ -22,7 +20,7 @@ contract VDFPietrzakTest is Test {
         bytes memory rsaChallengeBytes = bytes(rsaChallenge);
 
         // Create the BigNumber struct
-        n = BigNumbers.BigNumber({
+        n = BigNumber({
             val: rsaChallengeBytes,
             bitlen: 2048
         });
@@ -39,7 +37,7 @@ contract VDFPietrzakTest is Test {
     }
 
     function testConstructorInvalidN() public {
-        BigNumbers.BigNumber memory invalidN = BigNumbers.BigNumber(0, new uint256[](0));
+        BigNumber memory invalidN = BigNumber(0, new uint256[](0));
         vm.expectRevert("Invalid modulus n");
         new VDFPietrzak(invalidN, delta, T);
     }
@@ -56,13 +54,13 @@ contract VDFPietrzakTest is Test {
 
     function testVerifyPietrzak() public {
         // This is a mock test. In a real scenario, you'd need to generate valid proofs.
-        BigNumbers.BigNumber[] memory v = new BigNumbers.BigNumber[](3);
-        v[0] = BigNumbers.BigNumber(64, new uint256[](2));
-        v[1] = BigNumbers.BigNumber(64, new uint256[](2));
-        v[2] = BigNumbers.BigNumber(64, new uint256[](2));
+        BigNumber[] memory v = new BigNumber[](3);
+        v[0] = BigNumber(64, new uint256[](2));
+        v[1] = BigNumber(64, new uint256[](2));
+        v[2] = BigNumber(64, new uint256[](2));
 
-        BigNumbers.BigNumber memory x = BigNumbers.BigNumber(64, new uint256[](2));
-        BigNumbers.BigNumber memory y = BigNumbers.BigNumber(64, new uint256[](2));
+        BigNumber memory x = BigNumber(64, new uint256[](2));
+        BigNumber memory y = BigNumber(64, new uint256[](2));
 
         bool result = vdf.verifyPietrzak(v, x, y);
         
@@ -72,9 +70,9 @@ contract VDFPietrzakTest is Test {
     }
 
     function testVerifyPietrzakWithInvalidInput() public {
-        BigNumbers.BigNumber[] memory v = new BigNumbers.BigNumber[](0);
-        BigNumbers.BigNumber memory x = BigNumbers.BigNumber(0, new uint256[](0));
-        BigNumbers.BigNumber memory y = BigNumbers.BigNumber(0, new uint256[](0));
+        BigNumber[] memory v = new BigNumber[](0);
+        BigNumber memory x = BigNumber(0, new uint256[](0));
+        BigNumber memory y = BigNumber(0, new uint256[](0));
 
         bool result = vdf.verifyPietrzak(v, x, y);
         

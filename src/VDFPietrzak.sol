@@ -2,25 +2,22 @@
 pragma solidity 0.8.25;
 
 import "./libraries/PietrzakLibrary.sol";
-import "./libraries/BigNumbers.sol";
 
 interface IMinimalPietrzak {
     function verifyPietrzak(
-        BigNumbers.BigNumber[] memory v,
-        BigNumbers.BigNumber memory x,
-        BigNumbers.BigNumber memory y
+        BigNumber[] memory v,
+        BigNumber memory x,
+        BigNumber memory y
     ) external view returns (bool);
 }
 
 contract VDFPietrzak is IMinimalPietrzak {
-    using BigNumbers for BigNumbers.BigNumber;
-
-    BigNumbers.BigNumber public n;
+    BigNumber public n;
     uint256 public immutable delta;
     uint256 public immutable T;
 
     constructor(
-        BigNumbers.BigNumber memory _n,
+        BigNumber memory _n,
         uint256 _delta,
         uint256 _T
     ) {
@@ -34,9 +31,9 @@ contract VDFPietrzak is IMinimalPietrzak {
     }
 
     function verifyPietrzak(
-        BigNumbers.BigNumber[] memory v,
-        BigNumbers.BigNumber memory x,
-        BigNumbers.BigNumber memory y
+        BigNumber[] memory v,
+        BigNumber memory x,
+        BigNumber memory y
     ) external view override returns (bool) {
         return PietrzakLibrary.verify(v, x, y, n, delta, T);
     }
