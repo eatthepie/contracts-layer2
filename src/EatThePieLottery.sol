@@ -1,22 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
-// Import OpenZeppelin contracts for security best practices
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 
 import "./VDFPietrzak.sol";
 import "./NFTGenerator.sol";
 import "./libraries/BigNumbers.sol";
 
-contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
+contract EatThePieLottery is Ownable, ReentrancyGuard {
     // Enums
     enum Difficulty { Easy, Medium, Hard }
 
     // Contracts
     VDFPietrzak public vdfContract;
-    NFTGenerator public nftGenerator;
+    NFTGenerator public immutable nftGenerator;
 
     // Constants
     /* prize pool distribution (percentages) */
@@ -47,7 +45,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     uint256 public ticketPrice;
     uint256 public currentGameNumber;
     uint256 public lastDrawTime;
-    uint256 public vdfModulusN;
+    BigNumber public vdfModulusN;
     /* check if game difficulty needs to be adjusted */
     uint256 public consecutiveJackpots;
     uint256 public consecutiveNoJackpots;
@@ -64,7 +62,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     /* needed if RSA 2048 security gets busted in the next 3 decades */
     /* in the event of a new VDF prover is needed to change security params of (N, T, or delta), we allow it with a 10 game buffer for anyone to verify the new VDF contract. */
     address public newVDFContractAddress;
-    uint256 public newVDFModulusN;
+    BigNumber public newVDFModulusN;
     uint256 public newVDFContractAddressGameNumber;
 
     // game state
@@ -84,7 +82,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
 
     // lottery numbers
     mapping(uint256 => bool) public gameDrawInitiated;
-    mapping(uint256 => uint256) public gameRandom;
+    mapping(uint256 => BigNumber) public gameRandomValue;
     mapping(uint256 => uint256) public gameRandomBlock;
     mapping(uint256 => bool) public gameVDFValid;
     // game results
@@ -93,11 +91,12 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     mapping(uint256 => bool) public prizesLoyaltyDistributed;
     mapping(uint256 => bool) public gameJackpotWon;
     mapping(uint256 => uint256) public gameDrawnBlock;
+    mapping(uint256 => mapping(address => bool)) public hasClaimedNFT;
 
     // Events
     event TicketPurchased(address indexed player, uint256 gameNumber, uint256[3] numbers, uint256 etherball);
     event DrawInitiated(uint256 gameNumber, uint256 targetSetBlock);
-    event RandomSet(uint256 gameNumber, uint256 random);
+    event RandomSet(uint256 gameNumber, BigNumber random);
     event VDFProofSubmitted(address indexed submitter, uint256 gameNumber);
     event WinningNumbersSet(uint256 indexed gameNumber, uint256[4] winningNumbers);
     event PrizesDistributed(uint256 gameNumber);
@@ -112,8 +111,8 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     event NFTMinted(address indexed winner, uint256 indexed tokenId, uint256 indexed gameNumber);
     event UnclaimedPrizesReleased(uint256 fromGame, uint256 toGame, uint256 amount);
 
-    constructor(address _vdfContractAddress, uint256 _vdfModN, address _nftGeneratorAddress, address _feeRecipient) {
-        vdfModulusN = _vdfModN;
+    constructor(address _vdfContractAddress, bytes memory _vdfModN, address _nftGeneratorAddress, address _feeRecipient) Ownable(msg.sender) {
+        vdfModulusN = BigNumbers.init(_vdfModN);
         vdfContract = VDFPietrzak(_vdfContractAddress);
         nftGenerator = NFTGenerator(_nftGeneratorAddress);
         ticketPrice = 0.1 ether;
@@ -242,10 +241,11 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
 
         // check vdf contract changes
         if (newVDFContractAddress != address(0) && newVDFContractAddressGameNumber == currentGameNumber) {
-            require(newVDFModulusN > 0, "Invalid new VDF modulus");
+            require(!BigNumbers.isZero(newVDFModulusN), "Invalid new VDF modulus");
             vdfContract = VDFPietrzak(newVDFContractAddress);
             vdfModulusN = newVDFModulusN;
             newVDFContractAddress = address(0);
+            newVDFModulusN = BigNumber(new bytes(0), 0);
         }
 
         emit DrawInitiated(currentGameNumber - 1, targetSetBlock);
@@ -255,31 +255,33 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
     function setRandom(uint256 gameNumber) external {
         require(gameDrawInitiated[gameNumber], "Draw not initiated for this game");
         require(block.number >= gameRandomBlock[gameNumber], "Buffer period not yet passed");
-        require(gameRandom[gameNumber] == uint(0), "Random already set for this game");
+        require(BigNumbers.isZero(gameRandomValue[gameNumber]), "Random already set for this game");
 
-        uint256 random = deriveG(block.prevrandao);
+        BigNumber memory random = deriveG(block.prevrandao);
         require(validateG(random), "Invalid random value");
 
-        gameRandom[gameNumber] = random;
+        gameRandomValue[gameNumber] = random;
         emit RandomSet(gameNumber, random);
     }
 
     // Derive random number g from prevRandao. Ensure g is a good prime.
-    function deriveG(bytes32 prevrandao) internal pure returns (uint256) {
-        uint256 h = uint256(prevrandao);
-        uint256 hashed = uint256(keccak256(abi.encodePacked(h)));
-        uint256 g = (hashed % (vdfModulusN - 2)) + 2; // Map to [2, N-1] to exclude 0 and 1
-        return g;
+    function deriveG(uint256 prevrandao) internal view returns (BigNumber memory) {
+        bytes memory hashed = abi.encodePacked(keccak256(abi.encodePacked(prevrandao)));
+        BigNumber memory g = BigNumbers.init(hashed);
+        BigNumber memory two = BigNumbers.init(abi.encodePacked(uint256(2)));
+        BigNumber memory nMinusTwo = BigNumbers.sub(vdfModulusN, two);
+        return BigNumbers.add(BigNumbers.mod(g, nMinusTwo), two); // Map to [2, N-1] to exclude 0 and 1
     }
 
     // Validate g with basic and probabilistic checks to ensure it is a good prime.
     // Eliminates possible small primes as factors of g^prime mod N.
-    function validateG(uint256 g) internal pure returns (bool) {        
+    function validateG(BigNumber memory g) internal view returns (bool) {
         uint256[10] memory smallPrimes = [uint256(2), 3, 5, 7, 11, 13, 17, 19, 23, 29];
         
         for (uint256 i = 0; i < smallPrimes.length; i++) {
-            uint256 prime = smallPrimes[i];
-            if (expmod(g, prime, vdfModulusN) == 1) {
+            BigNumber memory prime = BigNumbers.init(abi.encodePacked(smallPrimes[i]));
+            BigNumber memory result = BigNumbers.modexp(g, prime, vdfModulusN);
+            if (BigNumbers.eq(result, BigNumbers.init(BigNumbers.BYTESONE))) {
                 return false;
             }
         }
@@ -287,30 +289,12 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         return true;
     }
 
-    function expmod(uint256 base, uint256 exponent, uint256 modulus) internal view returns (uint256 result) {
-        bool success;
-        assembly {
-            let freemem := mload(0x40)
-            mstore(freemem, 0x20) // Length of base
-            mstore(add(freemem, 0x20), 0x20) // Length of exponent
-            mstore(add(freemem, 0x40), 0x20) // Length of modulus
-            mstore(add(freemem, 0x60), base)
-            mstore(add(freemem, 0x80), exponent)
-            mstore(add(freemem, 0xA0), modulus)
-            success := staticcall(sub(gas(), 2000), 0x05, freemem, 0xC0, freemem, 0x20)
-            result := mload(freemem)
-        }
-        require(success, "Modular exponentiation failed");
-    }
-
     function submitVDFProof(uint256 gameNumber, BigNumber[] memory v, BigNumber memory y) external nonReentrant {
-        require(gameRandom[gameNumber] != uint(0), "Random value not set for this game");
+        require(!BigNumbers.isZero(gameRandomValue[gameNumber]), "Random value not set for this game");
         require(!gameVDFValid[gameNumber], "VDF proof already submitted for this game");
 
         // VDF Verification
-        bytes memory xBytes = abi.encodePacked(gameRandom[gameNumber]);
-        BigNumber memory x = BigNumbers.init(xBytes);
-        bool isValid = vdfContract.verifyVDF(v, x, y);
+        bool isValid = vdfContract.verifyPietrzak(v, gameRandomValue[gameNumber], y);
         require(isValid, "Invalid VDF proof");
 
         gameVDFValid[gameNumber] = true;
@@ -448,11 +432,6 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         require(success, "Transfer failed");
 
         emit PrizeClaimed(gameNumber, msg.sender, totalPrize);
-
-        // If the claimer won the jackpot, mint the NFT
-        if (goldTicketOwners[gameNumber][goldTicketHash][msg.sender]) {
-            mintWinningNFT(gameNumber, msg.sender);
-        }
     }
 
     function distributeLoyaltyPrize(uint256 gameNumber, address[] calldata addresses) external nonReentrant {
@@ -487,29 +466,31 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         uint256 loyaltyPrizePerWinner = loyaltyPrize / winningCounter;
         require(loyaltyPrizePerWinner > 0, "Loyalty prize per winner is zero");
 
+        address[] memory winningAddresses = new address[](winningCounter);
         for (uint256 i = 0; i < winningCounter; i++) {
             (bool success, ) = payable(winners[i]).call{value: loyaltyPrizePerWinner}("");
             require(success, "Transfer failed");
+            winningAddresses[i] = winners[i];
         }
 
         prizesLoyaltyDistributed[gameNumber] = true;
-        emit LoyaltyPrizeDistributed(gameNumber, winners[0:winningCounter], loyaltyPrizePerWinner);
+        emit LoyaltyPrizeDistributed(gameNumber, winningAddresses, loyaltyPrizePerWinner);
     }
 
-    function mintWinningNFT(uint256 gameNumber, address winner) internal {
+    function mintWinningNFT(uint256 gameNumber) external {
+        bytes32 goldTicketHash = computeGoldTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1], gameWinningNumbers[gameNumber][2], gameWinningNumbers[gameNumber][3]);
+
+        require(goldTicketOwners[gameNumber][goldTicketHash][msg.sender], "Not a gold ticket winner");
         require(gameDrawCompleted[gameNumber] == true, "Game draw not completed yet");
+        require(!hasClaimedNFT[gameNumber][msg.sender], "NFT already claimed for this game");
 
-        // Generate a unique tokenId
-        uint256 tokenId = uint256(keccak256(abi.encodePacked(gameNumber, winner)));
+        uint256[4] memory payouts = gamePayouts[gameNumber];
 
-        // Mint the NFT
-        _safeMint(winner, tokenId);
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(gameNumber, msg.sender)));
+        nftGenerator.mintNFT(msg.sender, tokenId, gameNumber, gameWinningNumbers[gameNumber], payouts[0]);
 
-        // Generate and set the token URI
-        string memory tokenURI = nftGenerator.generateNFTMetadata(gameNumber, gameWinningNumbers[gameNumber]);
-        _setTokenURI(tokenId, tokenURI);
-
-        emit NFTMinted(winner, tokenId, gameNumber);
+        hasClaimedNFT[gameNumber][msg.sender] = true;
+        emit NFTMinted(msg.sender, tokenId, gameNumber);
     }
 
     function releaseUnclaimedPrizes(uint256 gameNumber) external {
@@ -585,11 +566,11 @@ contract EatThePieLottery is Ownable, ReentrancyGuard, ERC721URIStorage {
         emit TicketPriceChangeScheduled(_newPrice, newTicketPriceGameNumber);
     }
 
-    function setNewVDFContract(address _newVDFContract, uint256 _newVDFModN) external onlyOwner {
+    function setNewVDFContract(address _newVDFContract, bytes memory _newVDFModN) external onlyOwner {
         require(_newVDFContract != address(0) && _newVDFContract != address(vdfContract), "Invalid VDF contract address");
-        require(_newVDFModN > 0, "Invalid VDF modulus");
+        require(_newVDFModN.length > 0, "Invalid VDF modulus");
         newVDFContractAddress = _newVDFContract;
-        newVDFModulusN = _newVDFModN;
+        newVDFModulusN = BigNumbers.init(_newVDFModN);
         newVDFContractAddressGameNumber = currentGameNumber + 10;
     }
 

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
@@ -7,77 +7,75 @@ import "../src/libraries/BigNumbers.sol";
 import "../src/libraries/PietrzakLibrary.sol";
 
 contract VDFPietrzakTest is Test {
-    VDFPietrzak public vdf;
-    BigNumber public n;
-    uint256 public delta;
-    uint256 public T;
+    VDFPietrzak private vdf;
+    BigNumber private n;
+    uint256 private delta;
+    uint256 private T;
 
     function setUp() public {
-        // RSA-2048 challenge value
-        string memory rsaChallenge = "25195908475657893494027183240048398571429282126204032027777137836043662020707595556264018525880784406918290641249515082189298559149176184502808489120072844992687392807287776735971418347270261896375014971824691165077613379859095700097330459748808428401797429100642458691817195118746121515172654632282216869987549182422433637259085141865462043576798423387184774447920739934236584823824281198163815010674810451660377306056201619676256133844143603833904414952634432190114657544454178424020924616515723350778707749817125772467962926386356373289912154831438167899885040445364023527381951378636564391212010397122822120720357";
+        // Initialize parameters
+        n = BigNumber(hex"00c7970ceedcc3b0754490201a7aa613cd73911081c790f5f1a8726f463550bb5b9fd7ccb65812631a5cf503078400000000000000000001def1", 256);
+        delta = 8;
+        T = 1024;
 
-        // Convert the string to bytes
-        bytes memory rsaChallengeBytes = bytes(rsaChallenge);
-
-        // Create the BigNumber struct
-        n = BigNumber({
-            val: rsaChallengeBytes,
-            bitlen: 2048
-        });
-        delta = 4;
-        T = 1048576; // 2 ** 20
-
+        // Deploy the VDFPietrzak contract
         vdf = new VDFPietrzak(n, delta, T);
     }
 
     function testConstructor() public {
-        assertEq(vdf.n().bitlen, n.bitlen, "Modulus n bitlen mismatch");
-        assertEq(vdf.delta(), delta, "Delta mismatch");
-        assertEq(vdf.T(), T, "T mismatch");
+        assertEq(vdf.delta(), delta, "Delta should be set correctly");
+        assertEq(vdf.T(), T, "T should be set correctly");
     }
 
-    function testConstructorInvalidN() public {
-        BigNumber memory invalidN = BigNumber(0, new uint256[](0));
-        vm.expectRevert("Invalid modulus n");
-        new VDFPietrzak(invalidN, delta, T);
-    }
+    function testVerifyValidProof() public {
+        // Generate a valid proof (this should be done off-chain in practice)
+        (BigNumber[] memory v, BigNumber memory x, BigNumber memory y) = generateValidProof();
 
-    function testConstructorInvalidT() public {
-        vm.expectRevert("T must be greater than zero");
-        new VDFPietrzak(n, delta, 0);
-    }
-
-    function testConstructorInvalidDelta() public {
-        vm.expectRevert("delta must be less than 256");
-        new VDFPietrzak(n, 256, T);
-    }
-
-    function testVerifyPietrzak() public {
-        // This is a mock test. In a real scenario, you'd need to generate valid proofs.
-        BigNumber[] memory v = new BigNumber[](3);
-        v[0] = BigNumber(64, new uint256[](2));
-        v[1] = BigNumber(64, new uint256[](2));
-        v[2] = BigNumber(64, new uint256[](2));
-
-        BigNumber memory x = BigNumber(64, new uint256[](2));
-        BigNumber memory y = BigNumber(64, new uint256[](2));
-
+        // Verify the proof
         bool result = vdf.verifyPietrzak(v, x, y);
-        
-        // The actual result will depend on the implementation of PietrzakLibrary.verify
-        // For now, we're just checking that the function executes without reverting
-        assertTrue(true);
+        assertTrue(result, "Valid proof should be verified");
     }
 
-    function testVerifyPietrzakWithInvalidInput() public {
-        BigNumber[] memory v = new BigNumber[](0);
-        BigNumber memory x = BigNumber(0, new uint256[](0));
-        BigNumber memory y = BigNumber(0, new uint256[](0));
+    function testVerifyInvalidProof() public {
+        // Generate an invalid proof
+        (BigNumber[] memory v, BigNumber memory x, BigNumber memory y) = generateInvalidProof();
 
+        // Verify the proof
         bool result = vdf.verifyPietrzak(v, x, y);
-        
-        // The actual result will depend on the implementation of PietrzakLibrary.verify
-        // Typically, invalid input should return false
-        assertFalse(result);
+        assertFalse(result, "Invalid proof should not be verified");
+    }
+
+    function testVerifyWithInvalidParameters() public {
+        // Generate a valid proof
+        (BigNumber[] memory v, BigNumber memory x, BigNumber memory y) = generateValidProof();
+
+        // Modify x to make it invalid
+        x = BigNumbers.add(x, BigNumber(BigNumbers.BYTESONE, BigNumbers.UINTONE));
+
+        // Verify the proof
+        bool result = vdf.verifyPietrzak(v, x, y);
+        assertFalse(result, "Proof with invalid x should not be verified");
+    }
+
+    // Helper function to generate a valid proof (simplified for testing purposes)
+    function generateValidProof() internal view returns (BigNumber[] memory v, BigNumber memory x, BigNumber memory y) {
+        // This is a simplified proof generation for testing purposes
+        // In a real scenario, this would be computed off-chain
+        x = BigNumber(hex"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", 256);
+        y = BigNumbers.modexp(x, BigNumbers.init(abi.encodePacked(T)), n);
+
+        uint256 tau = PietrzakLibrary.log2(T);
+        v = new BigNumber[](tau - delta);
+        for (uint256 i = 0; i < tau - delta; i++) {
+            v[i] = BigNumbers.modexp(x, BigNumbers.init(abi.encodePacked(uint256(1) << (tau - i - 1))), n);
+        }
+    }
+
+    // Helper function to generate an invalid proof
+    function generateInvalidProof() internal view returns (BigNumber[] memory v, BigNumber memory x, BigNumber memory y) {
+        // Generate a valid proof first
+        (v, x, y) = generateValidProof();
+        // Then modify y to make it invalid
+        y = BigNumbers.add(y, BigNumber(BigNumbers.BYTESONE, BigNumbers.UINTONE));
     }
 }

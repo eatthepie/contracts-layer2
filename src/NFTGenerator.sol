@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract NFTGenerator is ERC721 {
+    using Strings for uint256;
 
     struct NumberSVG {
         bytes path;
@@ -13,12 +14,25 @@ contract NFTGenerator is ERC721 {
     }
 
     mapping(uint256 => NumberSVG) private numberSVGs;
+    address public lotteryContract;
+    bool private initialized;
+
+    mapping(uint256 => uint256) private tokenGameNumbers;
+    mapping(uint256 => uint256[4]) private tokenWinningNumbers;
+    mapping(uint256 => uint256) private tokenPayouts;
 
     constructor() ERC721("EatThePieNFT", "ETPNFT") {
-        _initializeNumberSVGs();
+        initializeNumberSVGs();
     }
 
-    function _initializeNumberSVGs() private {
+    function setLotteryContract(address _lotteryContract) external {
+        require(!initialized, "Already initialized");
+        require(_lotteryContract != address(0), "Invalid lottery contract address");
+        lotteryContract = _lotteryContract;
+        initialized = true;
+    }
+
+    function initializeNumberSVGs() private {
         numberSVGs[0] = NumberSVG(abi.encodePacked('<path d="M47.4207 72.5C43.6874 73.4333 39.054 73.9 33.5207 73.9C27.9874 73.9 23.3207 73.4333 19.5207 72.5C15.7874 71.5 12.3874 69.7 9.3207 67.1C3.25404 61.9667 0.220703 51.9333 0.220703 37C0.220703 22.6 3.38737 12.8333 9.7207 7.69999C12.854 5.16666 16.2874 3.4 20.0207 2.4C23.754 1.4 28.2207 0.899998 33.4207 0.899998C38.6874 0.899998 43.1874 1.4 46.9207 2.4C50.7207 3.4 54.1874 5.16666 57.3207 7.69999C63.654 12.8333 66.8207 22.6 66.8207 37C66.8207 51.9333 63.7874 61.9667 57.7207 67.1C54.654 69.7 51.2207 71.5 47.4207 72.5ZM31.4207 56.9C31.954 57.7667 32.654 58.2 33.5207 58.2C34.454 58.2 35.1874 57.7667 35.7207 56.9C36.254 55.9667 36.6874 53.9667 37.0207 50.9C37.354 47.8333 37.5207 43.4667 37.5207 37.8C37.5207 32.1333 37.354 27.7333 37.0207 24.6C36.6874 21.4 36.254 19.3 35.7207 18.3C35.1874 17.2333 34.454 16.7 33.5207 16.7C32.654 16.7 31.954 17.2 31.4207 18.2C30.0874 20.4667 29.4207 27 29.4207 37.8C29.4207 48.5333 30.0874 54.9 31.4207 56.9Z" fill="black"/>'), 67);
         numberSVGs[1] = NumberSVG(abi.encodePacked('<path d="M40.1438 69.6C40.1438 70.3333 38.1104 70.9333 34.0438 71.4C29.9771 71.8 25.9104 72 21.8438 72C17.7771 72 15.1438 71.8333 13.9438 71.5C12.8104 71.1 12.2438 70.4667 12.2438 69.6V26.4H2.04375C0.910417 26.4 0.34375 23.9667 0.34375 19.1C0.34375 14.2333 0.910417 9.83333 2.04375 5.9C2.37708 4.63333 5.91042 3.46666 12.6438 2.4C19.3771 1.33333 24.5438 0.799999 28.1438 0.799999C31.7438 0.799999 34.1438 0.933332 35.3438 1.2C36.5438 1.46666 37.4438 1.8 38.0438 2.2C38.6438 2.53333 39.1104 2.93333 39.4438 3.4C39.9104 4.13333 40.1438 4.83333 40.1438 5.5V69.6Z" fill="black"/>'), 41);
         numberSVGs[2] = NumberSVG(abi.encodePacked('<path d="M7.68711 27.9C5.82044 27.9 4.18711 25.7 2.78711 21.3C1.45378 16.9 0.787109 12.6667 0.787109 8.59999C0.787109 7.66666 1.82044 6.63333 3.88711 5.5C5.95378 4.3 9.08711 3.23333 13.2871 2.3C17.4871 1.36667 22.0538 0.899998 26.9871 0.899998C46.1204 0.899998 55.6871 7.6 55.6871 21C55.6871 24.7333 54.8871 28.2333 53.2871 31.5C51.6871 34.7667 49.9204 37.4 47.9871 39.4C46.0538 41.3333 43.7871 43.1333 41.1871 44.8C38.1871 46.6667 35.3204 48.1333 32.5871 49.2H52.5871C52.9871 49.2 53.4204 49.4 53.8871 49.8C54.3538 50.1333 54.8538 51.2 55.3871 53C55.9204 54.7333 56.1871 56.9333 56.1871 59.6C56.1871 62.2 56.0204 64.4 55.6871 66.2C55.3538 67.9333 54.9538 69.2 54.4871 70C53.4871 71.8 52.5871 72.7667 51.7871 72.9L51.2871 73H7.48711C3.28711 73 1.18711 66.4333 1.18711 53.3C1.18711 51.8333 5.52044 47.8 14.1871 41.2C17.4538 38.8 20.4538 36.1667 23.1871 33.3C25.9204 30.4333 27.2871 28.1 27.2871 26.3C27.2871 24.3 25.7871 23.3 22.7871 23.3C19.7871 23.3 16.6204 24.0667 13.2871 25.6C10.0204 27.1333 8.15378 27.9 7.68711 27.9Z" fill="black"/>'), 57);
@@ -31,28 +45,36 @@ contract NFTGenerator is ERC721 {
         numberSVGs[9] = NumberSVG(abi.encodePacked('<path d="M17.8945 47.8C12.1612 47.8 7.79453 45.7333 4.79453 41.6C1.8612 37.4 0.394531 31.9 0.394531 25.1C0.394531 19.3667 2.2612 14.1333 5.99453 9.4C7.99453 6.8 10.9612 4.73333 14.8945 3.2C18.8279 1.6 23.4945 0.799994 28.8945 0.799994C39.4945 0.799994 47.4279 3.53333 52.6945 9C57.9612 14.4667 60.5945 23.8333 60.5945 37.1C60.5945 50.3667 58.1279 59.8333 53.1945 65.5C48.2612 71.1 40.6279 73.9 30.2945 73.9C23.0945 73.9 16.9612 73.4667 11.8945 72.6C6.82787 71.6667 4.29453 70.5 4.29453 69.1C4.29453 67.4333 4.92787 64.4333 6.19453 60.1C7.52787 55.7667 8.72786 53.6 9.79453 53.6C10.1279 53.6 11.1279 53.7333 12.7945 54C17.6612 54.6667 21.8612 55 25.3945 55C28.9945 55 31.3279 54.0667 32.3945 52.2C33.4612 50.2667 33.9945 47.7333 33.9945 44.6C33.0612 45.3333 30.9945 46.0667 27.7945 46.8C24.6612 47.4667 21.3612 47.8 17.8945 47.8ZM30.4945 35.4C32.4279 35.4 33.3945 32 33.3945 25.2C33.3945 18.3333 32.4279 14.9 30.4945 14.9C28.4279 14.9 27.3945 18.3333 27.3945 25.2C27.3945 32 28.4279 35.4 30.4945 35.4Z" fill="black"/>'), 61);
     }
 
-    function generateNFTMetadata(
-        uint256 gameNumber,
-        uint256[4] memory ticketNumbers,
-        uint256 jackpotPrize
-    ) public view returns (string memory) {
-        bytes memory svg = generateQuadrantSVG(ticketNumbers);
+    function mintNFT(address winner, uint256 tokenId, uint256 gameNumber, uint256[4] calldata winningNumbers, uint256 payout) external {
+        require(msg.sender == lotteryContract, "Only the lottery contract can mint NFTs");
+        require(initialized, "Not initialized");
+        _safeMint(winner, tokenId);
+        tokenGameNumbers[tokenId] = gameNumber;
+        tokenWinningNumbers[tokenId] = winningNumbers;
+        tokenPayouts[tokenId] = payout;
+    }
+
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+        require(ownerOf(tokenId) != address(0), "ERC721Metadata: URI query for nonexistent token");
+
+        uint256 gameNumber = tokenGameNumbers[tokenId];
+        uint256[4] memory winningNumbers = tokenWinningNumbers[tokenId];
 
         string memory json = Base64.encode(
             bytes(
                 string(
                     abi.encodePacked(
                         '{"name": "EatThePie Lottery Ticket #', gameNumber.toString(), '",',
-                        '"description": "This NFT represents a lottery ticket in the EatThePie Lottery.",',
-                        '"image": "data:image/svg+xml;base64,', Base64.encode(svg), '",',
+                        '"description": "This NFT represents a winning ticket in the EatThePie Lottery.",',
+                        '"image": "', generateImageURI(winningNumbers), '",',
                         '"attributes": [',
                         '{"trait_type": "Game Number", "value": "', gameNumber.toString(), '"},',
-                        '{"trait_type": "Ticket Numbers", "value": "', 
-                        ticketNumbers[0].toString(), '-', 
-                        ticketNumbers[1].toString(), '-', 
-                        ticketNumbers[2].toString(), '-', 
-                        ticketNumbers[3].toString(), '"},',
-                        '{"trait_type": "Jackpot Prize", "value": "', jackpotPrize.toString(), ' ETH"}',
+                        '{"trait_type": "Payout", "value": "', tokenPayouts[tokenId].toString(), '"},',
+                        '{"trait_type": "Winning Numbers", "value": "', 
+                        winningNumbers[0].toString(), '-', 
+                        winningNumbers[1].toString(), '-', 
+                        winningNumbers[2].toString(), '-', 
+                        winningNumbers[3].toString(), '"}',
                         ']}'
                     )
                 )
@@ -60,6 +82,14 @@ contract NFTGenerator is ERC721 {
         );
 
         return string(abi.encodePacked("data:application/json;base64,", json));
+    }
+
+    function generateImageURI(uint256[4] memory numbers) internal view returns (string memory) {
+        bytes memory svg = generateQuadrantSVG(numbers);
+        return string(abi.encodePacked(
+            "data:image/svg+xml;base64,",
+            Base64.encode(svg)
+        ));
     }
 
     function generateQuadrantSVG(uint256[4] memory numbers) internal view returns (bytes memory) {
@@ -138,4 +168,3 @@ contract NFTGenerator is ERC721 {
         return totalWidth;
     }
 }
-

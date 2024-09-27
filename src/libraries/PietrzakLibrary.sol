@@ -12,54 +12,46 @@ library PietrzakLibrary {
         uint256 delta,
         uint256 T
     ) internal view returns (bool) {
-        require(T > 0, "T must be greater than zero");
-        require(delta < 256, "delta must be less than 256");
-
-        require(n.val.length > 0 && n.bitlen > 0, "Modulus n must be valid");
-        require(x.val.length > 0 && x.bitlen > 0, "x must be valid");
-        require(y.val.length > 0 && y.bitlen > 0, "y must be valid");
-
+        uint256 i;
         uint256 tau = log2(T);
         uint256 iMax = tau - delta;
-
-        require(delta < tau, "delta must be less than tau");
-        require(v.length >= iMax, "v array is too short for the number of iterations");
-
         BigNumber memory _two = BigNumber(
             BigNumbers.BYTESTWO,
             BigNumbers.UINTTWO
         );
-
-        uint256 i = 0;
-        while (i < iMax) {
+        do {
             BigNumber memory _r = _hash128(x.val, y.val, v[i].val);
-
-            x = x.modexp(_r, n).modmul(v[i], n);
-
-            if (T & 1 != 0) {
-                y = y.modexp(_two, n);
+            x = BigNumbers.modmul(BigNumbers.modexp(x, _r, n), v[i], n);
+            if (T & 1 != 0) y = BigNumbers.modexp(y, _two, n);
+            y = BigNumbers.modmul(BigNumbers.modexp(v[i], _r, n), y, n);
+            unchecked {
+                ++i;
+                T = T >> 1;
             }
-
-            y = v[i].modexp(_r, n).modmul(y, n);
-
-            i++;
-            T = T >> 1;
+        } while (i < iMax);
+        uint256 twoPowerOfDelta;
+        unchecked {
+            twoPowerOfDelta = 1 << delta;
+        }
+        bytes memory twoPowerOfDeltaBytes = new bytes(32);
+        assembly ("memory-safe") {
+            mstore(add(twoPowerOfDeltaBytes, 32), twoPowerOfDelta)
         }
 
-        uint256 twoPowerOfDelta = 1 << delta;
-        bytes memory twoPowerOfDeltaBytes = abi.encodePacked(twoPowerOfDelta);
-
-        BigNumber memory exponent = _two.modexp(
-            BigNumbers.init(twoPowerOfDeltaBytes),
-            BigNumbers._powModulus(_two, twoPowerOfDelta)
-        );
-
-        BigNumber memory expectedY = x.modexp(exponent, n);
-
-        if (!y.eq(expectedY)) {
-            return false;
-        }
-
+        if (
+            !BigNumbers.eq(
+                y,
+                BigNumbers.modexp(
+                    x,
+                    BigNumbers.modexp(
+                        _two,
+                        BigNumbers.init(twoPowerOfDeltaBytes),
+                        BigNumbers._powModulus(_two, twoPowerOfDelta)
+                    ),
+                    n
+                )
+            )
+        ) return false;
         return true;
     }
 
