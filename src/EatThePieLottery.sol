@@ -333,6 +333,39 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
         }
     }
 
+    function verifyPastGameVDF(uint256 gameNumber, BigNumber[] memory v, BigNumber memory y) external view returns (uint256[4] memory calculatedNumbers, bool isValid) {
+        require(gameNumber < currentGameNumber, "Game has not ended yet");
+        require(!BigNumbers.isZero(gameRandomValue[gameNumber]), "Random value not set for this game");
+
+        // Verify the VDF proof
+        isValid = vdfContract.verifyPietrzak(v, gameRandomValue[gameNumber], y);
+        
+        if (!isValid) {
+            return (calculatedNumbers, false);
+        }
+
+        // If the proof is valid, calculate the winning numbers
+        Difficulty difficulty = gameDifficulty[gameNumber];
+        (uint256 maxNumber, uint256 maxEtherball) = getDifficultyParams(difficulty);
+
+        bytes32 randomSeed = keccak256(y.val);
+
+        for (uint256 i = 0; i < 4; i++) {
+            uint256 maxValue = i < 3 ? maxNumber : maxEtherball;
+            calculatedNumbers[i] = generateUnbiasedRandomNumber(randomSeed, i, maxValue);
+        }
+
+        // Compare calculated winning numbers with stored winning numbers
+        for (uint256 i = 0; i < 4; i++) {
+            if (calculatedNumbers[i] != gameWinningNumbers[gameNumber][i]) {
+                isValid = false;
+                break;
+            }
+        }
+
+        return (calculatedNumbers, isValid);
+    }
+
     function calculatePayouts(uint256 gameNumber) external nonReentrant {
         require(gameVDFValid[gameNumber], "VDF proof not yet validated for this game");
         require(gameDrawCompleted[gameNumber] != true, "Payouts already calculated for this game");
