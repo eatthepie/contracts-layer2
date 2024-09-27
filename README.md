@@ -24,7 +24,7 @@ Eat The Pie is an Ethereum-based lottery system utilizing Verifiable Delay Funct
 1. Clone the repository:
 
    ```
-   git clone https://github.com/yourusername/eat-the-pie.git
+   git clone https://github.com/eatthepie/contracts.git
    cd eat-the-pie
    ```
 
