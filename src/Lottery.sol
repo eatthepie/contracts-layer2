@@ -8,7 +8,7 @@ import "./VDFPietrzak.sol";
 import "./NFTPrize.sol";
 import "./libraries/BigNumbers.sol";
 
-contract EatThePieLottery is Ownable, ReentrancyGuard {
+contract Lottery is Ownable, ReentrancyGuard {
     // Enums
     enum Difficulty { Easy, Medium, Hard }
 
