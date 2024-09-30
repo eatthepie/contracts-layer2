@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.25;
+// pragma solidity 0.8.26;
+pragma solidity ^0.8.25;
 
 import "./BigNumbers.sol";
 
@@ -56,42 +57,47 @@ library PietrzakLibrary {
     }
 
     function log2(uint256 value) internal pure returns (uint256) {
-        require(value > 0, "Value must be greater than zero");
         uint256 result = 0;
+        uint256 exp;
+        unchecked {
+            exp = 128 * toUint(value > (1 << 128) - 1);
+            value >>= exp;
+            result += exp;
 
-        if (value >= 2**128) {
-            value >>= 128;
-            result += 128;
-        }
-        if (value >= 2**64) {
-            value >>= 64;
-            result += 64;
-        }
-        if (value >= 2**32) {
-            value >>= 32;
-            result += 32;
-        }
-        if (value >= 2**16) {
-            value >>= 16;
-            result += 16;
-        }
-        if (value >= 2**8) {
-            value >>= 8;
-            result += 8;
-        }
-        if (value >= 2**4) {
-            value >>= 4;
-            result += 4;
-        }
-        if (value >= 2**2) {
-            value >>= 2;
-            result += 2;
-        }
-        if (value >= 2) {
-            result += 1;
-        }
+            exp = 64 * toUint(value > (1 << 64) - 1);
+            value >>= exp;
+            result += exp;
 
+            exp = 32 * toUint(value > (1 << 32) - 1);
+            value >>= exp;
+            result += exp;
+
+            exp = 16 * toUint(value > (1 << 16) - 1);
+            value >>= exp;
+            result += exp;
+
+            exp = 8 * toUint(value > (1 << 8) - 1);
+            value >>= exp;
+            result += exp;
+
+            exp = 4 * toUint(value > (1 << 4) - 1);
+            value >>= exp;
+            result += exp;
+
+            exp = 2 * toUint(value > (1 << 2) - 1);
+            value >>= exp;
+            result += exp;
+
+            result += toUint(value > 1);
+        }
         return result;
+    }
+
+    function toUint(bool b) internal pure returns (uint256 u) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            u := iszero(iszero(b))
+        }
     }
 
     function _hash128(
@@ -99,8 +105,12 @@ library PietrzakLibrary {
         bytes memory b,
         bytes memory c
     ) internal pure returns (BigNumber memory) {
-        bytes32 hash = keccak256(bytes.concat(a, b, c));
-        uint128 lowerHash = uint128(uint256(hash)); // Extract lower 128 bits
-        return BigNumbers.init(abi.encodePacked(lowerHash));
+        bytes memory concatenated = abi.encodePacked(a,b,c);
+        bytes32 hash = keccak256(concatenated);
+        bytes memory last16Bytes = new bytes(16);
+        for (uint i = 16; i < 32; i++) {
+            last16Bytes[i-16] = hash[i];
+        }
+        return BigNumbers.init(last16Bytes);
     }
 }

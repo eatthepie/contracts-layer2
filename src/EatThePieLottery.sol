@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./VDFPietrzak.sol";
-import "./NFTGenerator.sol";
+import "./NFTPrize.sol";
 import "./libraries/BigNumbers.sol";
 
 contract EatThePieLottery is Ownable, ReentrancyGuard {
@@ -14,7 +14,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
 
     // Contracts
     VDFPietrzak public vdfContract;
-    NFTGenerator public immutable nftGenerator;
+    NFTPrize public immutable nftPrize;
 
     // Constants
     /* prize pool distribution (percentages) */
@@ -37,7 +37,6 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
     uint256 public constant DRAW_MIN_PRIZE_POOL = 500 ether;
     uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
     uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // roughly 4 epoch delay for security 
-
     uint256 public constant BLOCKS_PER_YEAR = 2_252_571; // Approximate number of blocks in a year
 
     // State Variables
@@ -45,25 +44,21 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
     uint256 public ticketPrice;
     uint256 public currentGameNumber;
     uint256 public lastDrawTime;
-    BigNumber public vdfModulusN;
     /* check if game difficulty needs to be adjusted */
     uint256 public consecutiveJackpots;
     uint256 public consecutiveNoJackpots;
-    /* new game difficulty */
-    /* anyone can call changeDifficulty() */
+    /* new game difficulty - anyone can call changeDifficulty() */
     Difficulty public newDifficulty;
     uint256 public newDifficultyGame;
     uint256 public lastDifficultyChangeGame;
+
+    /* ADMIN CHANGES (ticket price or new vdf function) HAVE A 10 GAME BUFFER */
     /* new ticket price */
-    /* only admin capability - can change ticket price if needed. will have a 4 game buffer */
     uint256 public newTicketPrice;
     uint256 public newTicketPriceGameNumber;
-    /* new VDF contract */
-    /* needed if RSA 2048 security gets busted in the next 3 decades */
-    /* in the event of a new VDF prover is needed to change security params of (N, T, or delta), we allow it with a 10 game buffer for anyone to verify the new VDF contract. */
-    address public newVDFContractAddress;
-    BigNumber public newVDFModulusN;
-    uint256 public newVDFContractAddressGameNumber;
+    /* new VDF contract - needed if RSA 2048 security gets busted in the next 3 decades */
+    address public newVDFContract;
+    uint256 public newVDFContractGameNumber;
 
     // game state
     mapping(uint256 => uint256) public gamePrizePool;
@@ -82,7 +77,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
 
     // lottery numbers
     mapping(uint256 => bool) public gameDrawInitiated;
-    mapping(uint256 => BigNumber) public gameRandomValue;
+    mapping(uint256 => uint256) public gameRandomValue;
     mapping(uint256 => uint256) public gameRandomBlock;
     mapping(uint256 => bool) public gameVDFValid;
     // game results
@@ -96,9 +91,9 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
     // Events
     event TicketPurchased(address indexed player, uint256 gameNumber, uint256[3] numbers, uint256 etherball);
     event DrawInitiated(uint256 gameNumber, uint256 targetSetBlock);
-    event RandomSet(uint256 gameNumber, BigNumber random);
+    event RandomSet(uint256 gameNumber, uint256 random);
     event VDFProofSubmitted(address indexed submitter, uint256 gameNumber);
-    event WinningNumbersSet(uint256 indexed gameNumber, uint256[4] winningNumbers);
+    event WinningNumbersSet(uint256 indexed gameNumber, uint256 number1, uint256 number2, uint256 number3, uint256 etherball);
     event PrizesDistributed(uint256 gameNumber);
     event DifficultyChanged(uint256 gameNumber, Difficulty newDifficulty);
     event TicketsPurchased(address indexed player, uint256 gameNumber, uint256 ticketCount);
@@ -111,10 +106,9 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
     event NFTMinted(address indexed winner, uint256 indexed tokenId, uint256 indexed gameNumber);
     event UnclaimedPrizesReleased(uint256 fromGame, uint256 toGame, uint256 amount);
 
-    constructor(address _vdfContractAddress, bytes memory _vdfModN, address _nftGeneratorAddress, address _feeRecipient) Ownable(msg.sender) {
-        vdfModulusN = BigNumbers.init(_vdfModN);
+    constructor(address _vdfContractAddress, address _nftPrizeAddress, address _feeRecipient) Ownable(msg.sender) {
         vdfContract = VDFPietrzak(_vdfContractAddress);
-        nftGenerator = NFTGenerator(_nftGeneratorAddress);
+        nftPrize = NFTPrize(_nftPrizeAddress);
         ticketPrice = 0.1 ether;
         currentGameNumber = 1;
         gameDifficulty[currentGameNumber] = Difficulty.Easy;
@@ -125,7 +119,6 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
     // ticketing
     function buyTicket(uint256[3] memory numbers, uint256 etherball) external payable nonReentrant {
         require(msg.value == ticketPrice, "Incorrect ticket price");
-
         _processSingleTicketPurchase(numbers, etherball);
     }
 
@@ -240,61 +233,29 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
         }
 
         // check vdf contract changes
-        if (newVDFContractAddress != address(0) && newVDFContractAddressGameNumber == currentGameNumber) {
-            require(!BigNumbers.isZero(newVDFModulusN), "Invalid new VDF modulus");
-            vdfContract = VDFPietrzak(newVDFContractAddress);
-            vdfModulusN = newVDFModulusN;
-            newVDFContractAddress = address(0);
-            newVDFModulusN = BigNumber(new bytes(0), 0);
+        if (newVDFContract != address(0) && newVDFContractGameNumber == currentGameNumber) {
+            vdfContract = VDFPietrzak(newVDFContract);
+            newVDFContract = address(0);
         }
 
         emit DrawInitiated(currentGameNumber - 1, targetSetBlock);
     }
 
-    /* when the buffer period has passed, set the random value (g) for VDF */
     function setRandom(uint256 gameNumber) external {
         require(gameDrawInitiated[gameNumber], "Draw not initiated for this game");
         require(block.number >= gameRandomBlock[gameNumber], "Buffer period not yet passed");
-        require(BigNumbers.isZero(gameRandomValue[gameNumber]), "Random already set for this game");
-
-        BigNumber memory random = deriveG(block.prevrandao);
-        require(validateG(random), "Invalid random value");
-
-        gameRandomValue[gameNumber] = random;
-        emit RandomSet(gameNumber, random);
-    }
-
-    // Derive random number g from prevRandao. Ensure g is a good prime.
-    function deriveG(uint256 prevrandao) internal view returns (BigNumber memory) {
-        bytes memory hashed = abi.encodePacked(keccak256(abi.encodePacked(prevrandao)));
-        BigNumber memory g = BigNumbers.init(hashed);
-        BigNumber memory two = BigNumbers.init(abi.encodePacked(uint256(2)));
-        BigNumber memory nMinusTwo = BigNumbers.sub(vdfModulusN, two);
-        return BigNumbers.add(BigNumbers.mod(g, nMinusTwo), two); // Map to [2, N-1] to exclude 0 and 1
-    }
-
-    // Validate g with basic and probabilistic checks to ensure it is a good prime.
-    // Eliminates possible small primes as factors of g^prime mod N.
-    function validateG(BigNumber memory g) internal view returns (bool) {
-        uint256[10] memory smallPrimes = [uint256(2), 3, 5, 7, 11, 13, 17, 19, 23, 29];
-        
-        for (uint256 i = 0; i < smallPrimes.length; i++) {
-            BigNumber memory prime = BigNumbers.init(abi.encodePacked(smallPrimes[i]));
-            BigNumber memory result = BigNumbers.modexp(g, prime, vdfModulusN);
-            if (BigNumbers.eq(result, BigNumbers.init(BigNumbers.BYTESONE))) {
-                return false;
-            }
-        }
-        
-        return true;
+        require(gameRandomValue[gameNumber] == 0, "Random has already been set");
+        gameRandomValue[gameNumber] = block.prevrandao;
+        emit RandomSet(gameNumber, block.prevrandao);
     }
 
     function submitVDFProof(uint256 gameNumber, BigNumber[] memory v, BigNumber memory y) external nonReentrant {
-        require(!BigNumbers.isZero(gameRandomValue[gameNumber]), "Random value not set for this game");
+        require(gameRandomValue[gameNumber] != 0, "Random value not set for this game");
         require(!gameVDFValid[gameNumber], "VDF proof already submitted for this game");
 
         // VDF Verification
-        bool isValid = vdfContract.verifyPietrzak(v, gameRandomValue[gameNumber], y);
+        BigNumber memory x = BigNumbers.init(abi.encodePacked(gameRandomValue[gameNumber]));
+        bool isValid = vdfContract.verifyPietrzak(v, x, y);
         require(isValid, "Invalid VDF proof");
 
         gameVDFValid[gameNumber] = true;
@@ -316,12 +277,10 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
         }
 
         gameWinningNumbers[gameNumber] = winningNumbers;
-        emit WinningNumbersSet(gameNumber, winningNumbers);
+        emit WinningNumbersSet(gameNumber, winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
     }
 
     function generateUnbiasedRandomNumber(bytes32 seed, uint256 nonce, uint256 maxValue) internal pure returns (uint256) {
-        uint256 nBits = 256;
-        uint256 nBytes = 32;
         uint256 maxAllowed = type(uint256).max - (type(uint256).max % maxValue);
 
         while (true) {
@@ -331,15 +290,18 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
             }
             nonce++;
         }
+
+        revert("Failed to generate unbiased random number");
     }
 
     function verifyPastGameVDF(uint256 gameNumber, BigNumber[] memory v, BigNumber memory y) external view returns (uint256[4] memory calculatedNumbers, bool isValid) {
         require(gameNumber < currentGameNumber, "Game has not ended yet");
-        require(!BigNumbers.isZero(gameRandomValue[gameNumber]), "Random value not set for this game");
+        require(gameRandomValue[gameNumber] != 0, "Random value not set for this game");
 
         // Verify the VDF proof
-        isValid = vdfContract.verifyPietrzak(v, gameRandomValue[gameNumber], y);
-        
+        BigNumber memory x = BigNumbers.init(abi.encodePacked(gameRandomValue[gameNumber]));
+        isValid = vdfContract.verifyPietrzak(v, x, y);
+
         if (!isValid) {
             return (calculatedNumbers, false);
         }
@@ -520,7 +482,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
         uint256[4] memory payouts = gamePayouts[gameNumber];
 
         uint256 tokenId = uint256(keccak256(abi.encodePacked(gameNumber, msg.sender)));
-        nftGenerator.mintNFT(msg.sender, tokenId, gameNumber, gameWinningNumbers[gameNumber], payouts[0]);
+        nftPrize.mintNFT(msg.sender, tokenId, gameNumber, gameWinningNumbers[gameNumber], payouts[0]);
 
         hasClaimedNFT[gameNumber][msg.sender] = true;
         emit NFTMinted(msg.sender, tokenId, gameNumber);
@@ -538,7 +500,7 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
         emit UnclaimedPrizesReleased(gameNumber, currentGameNumber, unclaimedAmount);
     }
 
-    function changeDifficulty(uint256 gameNumber) external {
+    function changeDifficulty() external {
         require(currentGameNumber > 3, "Not enough games played");
         require(currentGameNumber > lastDifficultyChangeGame + 3, "Too soon to change difficulty");
 
@@ -599,12 +561,10 @@ contract EatThePieLottery is Ownable, ReentrancyGuard {
         emit TicketPriceChangeScheduled(_newPrice, newTicketPriceGameNumber);
     }
 
-    function setNewVDFContract(address _newVDFContract, bytes memory _newVDFModN) external onlyOwner {
+    function setNewVDFContract(address _newVDFContract) external onlyOwner {
         require(_newVDFContract != address(0) && _newVDFContract != address(vdfContract), "Invalid VDF contract address");
-        require(_newVDFModN.length > 0, "Invalid VDF modulus");
-        newVDFContractAddress = _newVDFContract;
-        newVDFModulusN = BigNumbers.init(_newVDFModN);
-        newVDFContractAddressGameNumber = currentGameNumber + 10;
+        newVDFContract = _newVDFContract;
+        newVDFContractGameNumber = currentGameNumber + 10;
     }
 
     function setFeeRecipient(address _newFeeRecipient) external onlyOwner {

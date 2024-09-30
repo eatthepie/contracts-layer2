@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-contract NFTGenerator is ERC721 {
+contract NFTPrize is ERC721 {
     using Strings for uint256;
 
     struct NumberSVG {
