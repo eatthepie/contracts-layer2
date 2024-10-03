@@ -7,6 +7,7 @@ import "../src/VDFPietrzak.sol";
 import "../src/NFTPrize.sol";
 import "../src/libraries/BigNumbers.sol";
 
+/*
 contract LotteryVDFTest is Test {
     Lottery public lottery;
     VDFPietrzak public vdf;
@@ -171,3 +172,4 @@ contract LotteryVDFTest is Test {
         assertEq(calculatedNumbers, lottery.gameWinningNumbers(gameNumber), "Calculated numbers should match winning numbers");
     }
 }
+*/

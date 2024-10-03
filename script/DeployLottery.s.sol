@@ -1,4 +1,4 @@
-// forge script script/DeployLottery.s.s.sol:DeployLottery --rpc-url http://localhost:8545 --broadcast
+// forge script script/DeployLottery.s.sol:DeployLottery --rpc-url http://localhost:8545 --broadcast
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 

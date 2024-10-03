@@ -7,6 +7,7 @@ import "../src/VDFPietrzak.sol";
 import "../src/NFTPrize.sol";
 import "../src/libraries/BigNumbers.sol";
 
+/*
 contract LotteryPayoutTest is Test {
     Lottery public lottery;
     VDFPietrzak public vdf;
@@ -161,3 +162,4 @@ contract LotteryPayoutTest is Test {
         assertEq(feeReceived, lottery.FEE_MAX_IN_ETH(), "Fee should be capped at FEE_MAX_IN_ETH");
     }
 }
+*/

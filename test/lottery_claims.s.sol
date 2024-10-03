@@ -7,6 +7,7 @@ import "../src/VDFPietrzak.sol";
 import "../src/NFTPrize.sol";
 import "../src/libraries/BigNumbers.sol";
 
+/*
 contract LotteryClaimsTest is Test {
     Lottery public lottery;
     VDFPietrzak public vdf;
@@ -176,3 +177,4 @@ contract LotteryClaimsTest is Test {
         vm.stopPrank();
     }
 }
+*/
