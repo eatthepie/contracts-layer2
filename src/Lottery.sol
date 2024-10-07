@@ -124,7 +124,7 @@ contract Lottery is Ownable, ReentrancyGuard {
 
     function buyBulkTickets(uint256[4][] calldata tickets) external payable nonReentrant {
         uint256 ticketCount = tickets.length;
-        require(ticketCount > 0 && ticketCount <= 1000, "Invalid ticket count");
+        require(ticketCount > 0 && ticketCount <= 100, "Invalid ticket count");
         require(msg.value == ticketPrice * ticketCount, "Incorrect total price");
 
         for (uint256 i = 0; i < ticketCount;) {
@@ -439,11 +439,10 @@ contract Lottery is Ownable, ReentrancyGuard {
 
         uint256 winningNumber = 0;
         uint256 winningCounter = 0;
-        address[] memory winners = new address[](addresses.length);
+        address[] memory winners = new address[](bronzeWinnerCount);
 
         for (uint256 i = 0; i < addresses.length; i++) {
             require(bronzeTicketOwners[gameNumber][bronzeTicketHash][addresses[i]], "Invalid address");
-        
             uint256 gamePlayerLoyaltyCount = playerLoyaltyCount[addresses[i]][gameNumber];
             if (gamePlayerLoyaltyCount > winningNumber) {
                 winningNumber = gamePlayerLoyaltyCount;
@@ -472,7 +471,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         emit LoyaltyPrizeDistributed(gameNumber, winningAddresses, loyaltyPrizePerWinner);
     }
 
-    function mintWinningNFT(uint256 gameNumber) external {
+    function mintWinningNFT(uint256 gameNumber) external nonReentrant {
         bytes32 goldTicketHash = computeGoldTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1], gameWinningNumbers[gameNumber][2], gameWinningNumbers[gameNumber][3]);
 
         require(goldTicketOwners[gameNumber][goldTicketHash][msg.sender], "Not a gold ticket winner");
