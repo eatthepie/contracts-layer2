@@ -37,7 +37,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant DRAW_MIN_PRIZE_POOL = 500 ether;
     uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
     uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // roughly 4 epoch delay for security 
-    uint256 public constant BLOCKS_PER_YEAR = 2_252_571; // Approximate number of blocks in a year
+    uint256 public constant BLOCKS_PER_YEAR = 3_000_000; // number of blocks before unclaimed prizes can be released
 
     // State Variables
     address public feeRecipient;
@@ -70,6 +70,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     mapping(uint256 => mapping(bytes32 => uint256)) public silverTicketCounts;
     mapping(uint256 => mapping(bytes32 => uint256)) public bronzeTicketCounts;
     mapping(address => mapping(uint256 => uint256)) public playerLoyaltyCount;
+    mapping(address => mapping(uint256 => uint256)) public playerTicketCount;
 
     mapping(uint256 => mapping(bytes32 => mapping(address => bool))) public goldTicketOwners;
     mapping(uint256 => mapping(bytes32 => mapping(address => bool))) public silverTicketOwners;
@@ -120,6 +121,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     function buyTicket(uint256[3] memory numbers, uint256 etherball) external payable nonReentrant {
         require(msg.value == ticketPrice, "Incorrect ticket price");
         _processSingleTicketPurchase(numbers, etherball);
+        playerTicketCount[msg.sender][currentGameNumber] += 1;
     }
 
     function buyBulkTickets(uint256[4][] calldata tickets) external payable nonReentrant {
@@ -131,6 +133,8 @@ contract Lottery is Ownable, ReentrancyGuard {
             _processSingleTicketPurchase([tickets[i][0], tickets[i][1], tickets[i][2]], tickets[i][3]);
             unchecked { ++i; }
         }
+
+        playerTicketCount[msg.sender][currentGameNumber] += ticketCount;
     }
 
     function _processSingleTicketPurchase(uint256[3] memory numbers, uint256 etherball) internal {
@@ -357,24 +361,18 @@ contract Lottery is Ownable, ReentrancyGuard {
         uint256 goldPrizePerWinner = goldWinnerCount > 0 ? goldPrize / goldWinnerCount : 0;
         uint256 silverPrizePerWinner = silverWinnerCount > 0 ? silverPrize / silverWinnerCount : 0;
         uint256 bronzePrizePerWinner = bronzeWinnerCount > 0 ? bronzePrize / bronzeWinnerCount : 0;
+        uint256 loyaltyTotalPrize = bronzeWinnerCount > 0 ? loyaltyPrize : 0;
 
-        // Calculate actual paid out amounts (which may be less than the total prize due to rounding down)
+        // Calculate paid out amounts (which may be less than the total prize due to rounding down)
         uint256 goldPaidOut = goldPrizePerWinner * goldWinnerCount;
         uint256 silverPaidOut = silverPrizePerWinner * silverWinnerCount;
         uint256 bronzePaidOut = bronzePrizePerWinner * bronzeWinnerCount;
 
         // Calculate unclaimed prizes
-        uint256 totalPaidOut = fee + goldPaidOut + silverPaidOut + bronzePaidOut;
-
-        // any winner means loyalty prize is paid out
-        if (bronzeWinnerCount > 0) {
-            totalPaidOut += loyaltyPrize;
-        }
-
-        uint256 unclaimedPrize = prizePool - totalPaidOut;
+        uint256 unclaimedPrize = prizePool - (goldPaidOut + silverPaidOut + bronzePaidOut + loyaltyTotalPrize + fee);
 
         // Store game outcomes and payout information
-        gamePayouts[gameNumber] = [goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyPrize];
+        gamePayouts[gameNumber] = [goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyTotalPrize];
         gameJackpotWon[gameNumber] = (goldWinnerCount > 0);
         gameDrawnBlock[gameNumber] = block.number;
 

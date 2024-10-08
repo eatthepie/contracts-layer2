@@ -2,24 +2,42 @@
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
+// import "../src/MockLotteryForTest.sol";
 import "../src/Lottery.sol";
 import "../src/VDFPietrzak.sol";
 import "../src/NFTPrize.sol";
 
 /*
 contract LotteryBasicTest is Test {
-    Lottery public lottery;
+    MockLottery public lottery;
+    // Lottery public lottery;
     VDFPietrzak public vdf;
     NFTPrize public nftPrize;
     address owner = address(this);
     address player = address(0x2);
+    address player1 = address(0x456);
+    address player2 = address(0x789);
+    address player3 = address(0xABC);
     address feeRecipient = address(0x4);
 
     function setUp() public {
         vm.startPrank(owner);
         vdf = new VDFPietrzak();
         nftPrize = new NFTPrize();
-        lottery = new Lottery(address(vdf), address(nftPrize), feeRecipient);
+        // lottery = new Lottery(address(vdf), address(nftPrize), feeRecipient);
+        lottery = new MockLottery(address(vdf), address(nftPrize), feeRecipient);
+
+        vm.stopPrank();
+    }
+
+    function fundLottery() internal {
+        vm.deal(player, 1000 ether);
+        vm.startPrank(player);
+        uint256[3] memory numbers = [uint256(1), uint256(2), uint256(3)];
+        uint256 etherball = 1;
+        for (uint i = 0; i < 5000; i++) {
+            lottery.buyTicket{value: 0.1 ether}(numbers, etherball);
+        }
         vm.stopPrank();
     }
 
@@ -37,12 +55,62 @@ contract LotteryBasicTest is Test {
         assertEq(prizePool, 0, "Initial prize pool should be 0");
     }
 
+    // Helper function to setup a game with winners
+    function setupGameWithWinners() internal returns (uint256) {
+        // Buy tickets for players
+        vm.deal(player1, 1 ether);
+        vm.deal(player2, 1 ether);
+        vm.deal(player3, 1 ether);
+
+        vm.prank(player1);
+        lottery.buyTicket{value: 0.1 ether}([uint256(1), uint256(2), uint256(3)], 1);
+        vm.prank(player2);
+        lottery.buyTicket{value: 0.1 ether}([uint256(1), uint256(2), uint256(4)], 1);
+        vm.prank(player3);
+        lottery.buyTicket{value: 0.1 ether}([uint256(1), uint256(2), uint256(5)], 2);
+
+        uint256 gameNumber = setupDrawAndVDF();
+
+        // Set winning numbers
+        // lottery.setWinningNumbers(gameNumber, abi.encodePacked(uint256(1), uint256(2), uint256(3), uint256(1)));
+        lottery.calculatePayouts(gameNumber);
+
+        return gameNumber;
+    }
+
+    // Helper function to initiate a draw, set random, and submit VDF proof
+    function setupDrawAndVDF() internal returns (uint256) {
+        fundLottery();
+        vm.warp(block.timestamp + lottery.DRAW_MIN_TIME_PERIOD() + 1);
+        lottery.initiateDraw();
+        uint256 gameNumber = lottery.currentGameNumber() - 1;
+        uint256 targetBlock = lottery.gameRandomBlock(gameNumber);
+        vm.roll(targetBlock);
+        lottery.setRandom(gameNumber);
+
+        // Mock VDF verification
+        vm.mockCall(
+            address(vdf),
+            abi.encodeWithSelector(VDFPietrzak.verifyPietrzak.selector),
+            abi.encode(true)
+        );
+
+        BigNumber[] memory v = new BigNumber[](1);
+        v[0] = BigNumbers.init(hex"1234");
+        BigNumber memory y = BigNumbers.init(hex"5678");
+
+        lottery.submitVDFProof(gameNumber, v, y);
+
+        return gameNumber;
+    }
+
     // Difficulty Change Tests
     function testChangeDifficulty() public {
         // Simulate multiple games with no jackpot wins
         for (uint i = 0; i < 3; i++) {
             setupGameWithWinners();
-            lottery.gameJackpotWon(lottery.currentGameNumber() - 1) = false;
+            // lottery.gameJackpotWon(lottery.currentGameNumber() - 1) = false;
+            // lottery.setGameJackpotWon(lottery.currentGameNumber() - 1, false);
         }
 
         Lottery.Difficulty initialDifficulty = lottery.gameDifficulty(lottery.currentGameNumber());
@@ -63,7 +131,8 @@ contract LotteryBasicTest is Test {
         // Simulate multiple games with mixed results
         for (uint i = 0; i < 3; i++) {
             setupGameWithWinners();
-            lottery.gameJackpotWon(lottery.currentGameNumber() - 1) = (i % 2 == 0);
+            // lottery.setGameJackpotWon(lottery.currentGameNumber() - 1, (i % 2 == 0));
+            // lottery.gameJackpotWon(lottery.currentGameNumber() - 1) = (i % 2 == 0);
         }
 
         Lottery.Difficulty initialDifficulty = lottery.gameDifficulty(lottery.currentGameNumber());
