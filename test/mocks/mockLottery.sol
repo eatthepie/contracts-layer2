@@ -6,10 +6,6 @@ contract MockLottery is Lottery {
     constructor(address _vdfContractAddress, address _nftPrizeAddress, address _feeRecipient) 
         Lottery(_vdfContractAddress, _nftPrizeAddress, _feeRecipient) {}
 
-    // function setGameJackpotWon(uint256 gameNumber, bool won) public {
-    //     gameJackpotWon[gameNumber] = won;
-    // }
-
     function setWinningNumbersForTesting(uint256 gameNumber, uint256[4] memory numbers) external {
         require(gameVDFValid[gameNumber], "VDF must be validated first");
         gameWinningNumbers[gameNumber] = numbers;
@@ -17,5 +13,9 @@ contract MockLottery is Lottery {
 
     function setPlayerTotalGamesForTesting(address player, uint256 gamesPlayed) external {
         playerTotalGamesPlayed[player] = gamesPlayed;
+    }
+
+    function setInitialDifficultyForTesting(Difficulty _difficulty) external {
+        gameDifficulty[currentGameNumber] = _difficulty;
     }
 }

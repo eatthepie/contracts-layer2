@@ -37,7 +37,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant DRAW_MIN_PRIZE_POOL = 500 ether;
     uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
     uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // roughly 4 epoch delay for security 
-    uint256 public constant BLOCKS_PER_YEAR = 3_000_000; // number of blocks before unclaimed prizes can be released
+    uint256 public constant BLOCKS_CLAIM_PERIOD = 3_000_000; // number of blocks before unclaimed prizes can be released
 
     // State Variables
     address public feeRecipient;
@@ -45,8 +45,8 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public currentGameNumber;
     uint256 public lastDrawTime;
     /* check if game difficulty needs to be adjusted */
-    uint256 public consecutiveJackpots;
-    uint256 public consecutiveNoJackpots;
+    uint256 public consecutiveJackpotGames;
+    uint256 public consecutiveNonJackpotGames;
     /* new game difficulty - anyone can call changeDifficulty() */
     Difficulty public newDifficulty;
     uint256 public newDifficultyGame;
@@ -86,7 +86,6 @@ contract Lottery is Ownable, ReentrancyGuard {
     mapping(uint256 => bool) public gameDrawCompleted;
     mapping(uint256 => mapping(address => bool)) public prizesClaimed;
     mapping(uint256 => bool) public prizesLoyaltyDistributed;
-    mapping(uint256 => bool) public gameJackpotWon;
     mapping(uint256 => uint256) public gameDrawnBlock;
     mapping(uint256 => mapping(address => bool)) public hasClaimedNFT;
 
@@ -221,13 +220,14 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(targetSetBlock > block.number, "Invalid target block");
         gameRandomBlock[currentGameNumber] = targetSetBlock;
 
+        Difficulty currentDifficulty = gameDifficulty[currentGameNumber];
+
         // Increment game number for the next game
         ++currentGameNumber;
 
         // check for difficulty changes
-        if (newDifficulty != Difficulty(0) && newDifficultyGame == currentGameNumber) {
+        if (newDifficulty != currentDifficulty && newDifficultyGame == currentGameNumber) {
             gameDifficulty[currentGameNumber] = newDifficulty;
-            newDifficulty = Difficulty(0);
         } else {
             gameDifficulty[currentGameNumber] = gameDifficulty[currentGameNumber - 1];
         }
@@ -377,8 +377,15 @@ contract Lottery is Ownable, ReentrancyGuard {
 
         // Store game outcomes and payout information
         gamePayouts[gameNumber] = [goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyTotalPrize];
-        gameJackpotWon[gameNumber] = (goldWinnerCount > 0);
         gameDrawnBlock[gameNumber] = block.number;
+
+        if (goldWinnerCount > 0) {
+            consecutiveJackpotGames++;
+            consecutiveNonJackpotGames = 0;
+        } else {
+            consecutiveNonJackpotGames++;
+            consecutiveJackpotGames = 0;
+        }
 
         // Transfer unclaimed prize to the next game
         if (prizeRemainder > 0) {
@@ -505,7 +512,7 @@ contract Lottery is Ownable, ReentrancyGuard {
 
     function releaseUnclaimedPrizes(uint256 gameNumber) external {
         require(gameDrawCompleted[gameNumber] == true, "Game must be completed");
-        require(block.number >= gameDrawnBlock[gameNumber] + BLOCKS_PER_YEAR && gameDrawnBlock[gameNumber] != 0, "Must wait 1 year after game");
+        require(block.number >= gameDrawnBlock[gameNumber] + BLOCKS_CLAIM_PERIOD && gameDrawnBlock[gameNumber] != 0, "Must wait BLOCKS_CLAIM_PERIOD period before releasing unclaimed prizes");
         require(gamePrizePool[gameNumber] > 0, "Prize pool must be non-zero");
 
         uint256 unclaimedAmount = gamePrizePool[gameNumber];
@@ -517,28 +524,25 @@ contract Lottery is Ownable, ReentrancyGuard {
 
     function changeDifficulty() external {
         require(currentGameNumber > 3, "Not enough games played");
-        require(currentGameNumber > lastDifficultyChangeGame + 3, "Too soon to change difficulty");
-
-        uint256 jackpotCount = 0;
-        for (uint256 i = currentGameNumber - 3; i < currentGameNumber; i++) {
-            if (gameJackpotWon[i]) {
-                jackpotCount++;
-            }
-        }
+        require(currentGameNumber >= newDifficultyGame + 3, "Too soon to change difficulty");
 
         Difficulty currentDifficulty = gameDifficulty[currentGameNumber];
-        Difficulty newGameDifficulty = currentDifficulty;
+        Difficulty newDifficultyValue = currentDifficulty;
 
-        if (jackpotCount == 3 && currentDifficulty != Difficulty.Hard) {
-            newGameDifficulty = Difficulty(uint(currentDifficulty) + 1);
-        } else if (jackpotCount == 0 && currentDifficulty != Difficulty.Easy) {
-            newGameDifficulty = Difficulty(uint(currentDifficulty) - 1);
+        if (consecutiveJackpotGames >= 3 && currentDifficulty != Difficulty.Hard) {
+            newDifficultyValue = Difficulty(uint(currentDifficulty) + 1);
+        } else if (consecutiveNonJackpotGames >= 3 && currentDifficulty != Difficulty.Easy) {
+            newDifficultyValue = Difficulty(uint(currentDifficulty) - 1);
         }
 
-        if (newGameDifficulty != currentDifficulty) {
-            gameDifficulty[currentGameNumber + 1] = newGameDifficulty;
-            lastDifficultyChangeGame = currentGameNumber;
-            emit DifficultyChanged(currentGameNumber + 1, newGameDifficulty);
+        if (newDifficultyValue != currentDifficulty) {
+            newDifficulty = newDifficultyValue;
+            newDifficultyGame = currentGameNumber + 1;
+            emit DifficultyChanged(currentGameNumber + 1, newDifficultyValue);
+
+            // Reset counters after difficulty change
+            consecutiveJackpotGames = 0;
+            consecutiveNonJackpotGames = 0;
         }
     }
 
