@@ -16,17 +16,14 @@ contract Lottery is Ownable, ReentrancyGuard {
     VDFPietrzak public vdfContract;
     NFTPrize public immutable nftPrize;
 
-    // Constants
     /* prize pool distribution (percentages) */
-    uint256 public constant GOLD_PERCENTAGE = 6000;
+    uint256 public constant GOLD_PERCENTAGE = 6500;
     uint256 public constant SILVER_PLACE_PERCENTAGE = 2500;
-    uint256 public constant BRONZE_PLACE_PERCENTAGE = 1000;
-    uint256 public constant LOYALTY_PERCENTAGE = 400;
+    uint256 public constant BRONZE_PLACE_PERCENTAGE = 900;
     /* fees are 1%, capped at max 100ETH */
     uint256 public constant FEE_PERCENTAGE = 100;
     uint256 public constant FEE_MAX_IN_ETH = 100 ether;
-
-    /* lottery ball numbers (max allowed numbers) */
+    /* lottery ball numbers (min = 1, max allowed numbers) */
     uint256 public constant EASY_MAX = 50;
     uint256 public constant EASY_ETHERBALL_MAX = 5;
     uint256 public constant MEDIUM_MAX = 100;
@@ -36,21 +33,19 @@ contract Lottery is Ownable, ReentrancyGuard {
     /* draw threshold */
     uint256 public constant DRAW_MIN_PRIZE_POOL = 500 ether;
     uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
-    uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // roughly 4 epoch delay for security 
-    uint256 public constant BLOCKS_CLAIM_PERIOD = 3_000_000; // number of blocks before unclaimed prizes can be released
+    uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // ~4 epoch delay 
+    uint256 public constant CLAIM_PERIOD_GAMES = 24; // 24 games to claim (~6 months)
 
-    // State Variables
     address public feeRecipient;
     uint256 public ticketPrice;
     uint256 public currentGameNumber;
     uint256 public lastDrawTime;
-    /* check if game difficulty needs to be adjusted */
+
+    /* game difficulty */
     uint256 public consecutiveJackpotGames;
     uint256 public consecutiveNonJackpotGames;
-    /* new game difficulty - anyone can call changeDifficulty() */
     Difficulty public newDifficulty;
     uint256 public newDifficultyGame;
-    uint256 public lastDifficultyChangeGame;
 
     /* ADMIN CHANGES (ticket price or new vdf function) HAVE A 10 GAME BUFFER */
     /* new ticket price */
@@ -61,22 +56,19 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public newVDFContractGameNumber;
 
     // game state
-    mapping(uint256 => uint256) public gamePrizePool;
+    mapping(uint256 => uint256) public gameStartBlock;
     mapping(uint256 => Difficulty) public gameDifficulty;
+    mapping(uint256 => uint256) public gamePrizePool;
     mapping(uint256 => uint256[4]) public gameWinningNumbers;
-    mapping(uint256 => uint256[4]) public gamePayouts; // gold, silver, bronze, loyalty
-    mapping(uint256 => mapping(address => bool)) public gameParticipants;
+    mapping(uint256 => uint256[3]) public gamePayouts;
     // tickets
-    mapping(uint256 => mapping(bytes32 => uint256)) public goldTicketCounts;
-    mapping(uint256 => mapping(bytes32 => uint256)) public silverTicketCounts;
-    mapping(uint256 => mapping(bytes32 => uint256)) public bronzeTicketCounts;
     mapping(address => mapping(uint256 => uint256)) public playerTicketCount;
-    mapping(address => uint256) public playerTotalGamesPlayed;
-
+    mapping(uint256 => mapping(bytes32 => uint256)) public goldTicketCounts;
     mapping(uint256 => mapping(bytes32 => mapping(address => bool))) public goldTicketOwners;
+    mapping(uint256 => mapping(bytes32 => uint256)) public silverTicketCounts;
     mapping(uint256 => mapping(bytes32 => mapping(address => bool))) public silverTicketOwners;
+    mapping(uint256 => mapping(bytes32 => uint256)) public bronzeTicketCounts;
     mapping(uint256 => mapping(bytes32 => mapping(address => bool))) public bronzeTicketOwners;
-
     // lottery numbers
     mapping(uint256 => bool) public gameDrawInitiated;
     mapping(uint256 => uint256) public gameRandomValue;
@@ -85,25 +77,22 @@ contract Lottery is Ownable, ReentrancyGuard {
     // game results
     mapping(uint256 => bool) public gameDrawCompleted;
     mapping(uint256 => mapping(address => bool)) public prizesClaimed;
-    mapping(uint256 => bool) public prizesLoyaltyDistributed;
     mapping(uint256 => uint256) public gameDrawnBlock;
     mapping(uint256 => mapping(address => bool)) public hasClaimedNFT;
 
     // Events
     event TicketPurchased(address indexed player, uint256 gameNumber, uint256[3] numbers, uint256 etherball);
+    event TicketsPurchased(address indexed player, uint256 gameNumber, uint256 ticketCount);
     event DrawInitiated(uint256 gameNumber, uint256 targetSetBlock);
     event RandomSet(uint256 gameNumber, uint256 random);
     event VDFProofSubmitted(address indexed submitter, uint256 gameNumber);
     event WinningNumbersSet(uint256 indexed gameNumber, uint256 number1, uint256 number2, uint256 number3, uint256 etherball);
-    event PrizesDistributed(uint256 gameNumber);
     event DifficultyChanged(uint256 gameNumber, Difficulty newDifficulty);
-    event TicketsPurchased(address indexed player, uint256 gameNumber, uint256 ticketCount);
     event TicketPriceChangeScheduled(uint256 newPrice, uint256 effectiveGameNumber);
     event RemainderPrizeTransferred(uint256 fromGame, uint256 toGame, uint256 amount);
-    event GamePrizePayoutInfo(uint256 gameNumber, uint256 goldPrize, uint256 silverPrize, uint256 bronzePrize, uint256 loyaltyPrize);
+    event GamePrizePayoutInfo(uint256 gameNumber, uint256 goldPrize, uint256 silverPrize, uint256 bronzePrize);
     event FeeRecipientChanged(address newFeeRecipient);
     event PrizeClaimed(uint256 gameNumber, address player, uint256 amount);
-    event LoyaltyPrizeDistributed(uint256 gameNumber, address[] winners, uint256 prizePerWinner);
     event NFTMinted(address indexed winner, uint256 indexed tokenId, uint256 indexed gameNumber);
     event UnclaimedPrizesReleased(uint256 fromGame, uint256 toGame, uint256 amount);
 
@@ -118,19 +107,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     }
 
     // ticketing
-    function buyTicket(uint256[3] memory numbers, uint256 etherball) external payable nonReentrant {
-        require(msg.value == ticketPrice, "Incorrect ticket price");
-        _processSingleTicketPurchase(numbers, etherball);
-
-        if (!gameParticipants[currentGameNumber][msg.sender]) {
-            gameParticipants[currentGameNumber][msg.sender] = true;
-            playerTotalGamesPlayed[msg.sender]++;
-        }
-
-        playerTicketCount[msg.sender][currentGameNumber] += 1;
-    }
-
-    function buyBulkTickets(uint256[4][] calldata tickets) external payable nonReentrant {
+    function buyTickets(uint256[4][] calldata tickets) external payable nonReentrant {
         uint256 ticketCount = tickets.length;
         require(ticketCount > 0 && ticketCount <= 100, "Invalid ticket count");
         require(msg.value == ticketPrice * ticketCount, "Incorrect total price");
@@ -140,12 +117,8 @@ contract Lottery is Ownable, ReentrancyGuard {
             unchecked { ++i; }
         }
 
-        if (!gameParticipants[currentGameNumber][msg.sender]) {
-            gameParticipants[currentGameNumber][msg.sender] = true;
-            playerTotalGamesPlayed[msg.sender]++;
-        }
-
         playerTicketCount[msg.sender][currentGameNumber] += ticketCount;
+        emit TicketsPurchased(msg.sender, currentGameNumber, ticketCount);
     }
 
     function _processSingleTicketPurchase(uint256[3] memory numbers, uint256 etherball) internal {
@@ -211,35 +184,33 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(block.timestamp >= lastDrawTime + DRAW_MIN_TIME_PERIOD, "Time interval not passed");
         require(gamePrizePool[currentGameNumber] >= DRAW_MIN_PRIZE_POOL, "Insufficient prize pool");
 
-        // Record the draw initiation
+        // Initiate the draw
         lastDrawTime = block.timestamp;
         gameDrawInitiated[currentGameNumber] = true;
 
-        // Calculate target block for randomness
         uint256 targetSetBlock = block.number + DRAW_DELAY_SECURITY_BUFFER;
         require(targetSetBlock > block.number, "Invalid target block");
         gameRandomBlock[currentGameNumber] = targetSetBlock;
 
+        // Begin next game
+        ++currentGameNumber;
+        gameStartBlock[currentGameNumber] = block.number;
+        
+        // check for changes to next game (difficulty, price, vdf contract)
         Difficulty currentDifficulty = gameDifficulty[currentGameNumber];
 
-        // Increment game number for the next game
-        ++currentGameNumber;
-
-        // check for difficulty changes
         if (newDifficulty != currentDifficulty && newDifficultyGame == currentGameNumber) {
             gameDifficulty[currentGameNumber] = newDifficulty;
         } else {
             gameDifficulty[currentGameNumber] = gameDifficulty[currentGameNumber - 1];
         }
 
-        // check ticket price changes
         if (newTicketPrice != 0 && newTicketPriceGameNumber == currentGameNumber) {
             require(newTicketPrice > 0, "Invalid new ticket price");
             ticketPrice = newTicketPrice;
             newTicketPrice = 0;
         }
 
-        // check vdf contract changes
         if (newVDFContract != address(0) && newVDFContractGameNumber == currentGameNumber) {
             vdfContract = VDFPietrzak(newVDFContract);
             newVDFContract = address(0);
@@ -274,7 +245,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         Difficulty difficulty = gameDifficulty[gameNumber];
         (uint256 maxNumber, uint256 maxEtherball) = getDifficultyParams(difficulty);
 
-        // Use the vdfOutput to generate random numbers
+        // Get random numbers
         bytes32 randomSeed = keccak256(vdfOutput);
         uint256[4] memory winningNumbers;
 
@@ -305,7 +276,6 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(gameNumber < currentGameNumber, "Game has not ended yet");
         require(gameRandomValue[gameNumber] != 0, "Random value not set for this game");
 
-        // Verify the VDF proof
         BigNumber memory x = BigNumbers.init(abi.encodePacked(gameRandomValue[gameNumber]));
         isValid = vdfContract.verifyPietrzak(v, x, y);
 
@@ -313,7 +283,6 @@ contract Lottery is Ownable, ReentrancyGuard {
             return (calculatedNumbers, false);
         }
 
-        // If the proof is valid, calculate the winning numbers
         Difficulty difficulty = gameDifficulty[gameNumber];
         (uint256 maxNumber, uint256 maxEtherball) = getDifficultyParams(difficulty);
 
@@ -343,13 +312,12 @@ contract Lottery is Ownable, ReentrancyGuard {
         uint256 goldPrize = (prizePool * GOLD_PERCENTAGE) / 10000;
         uint256 silverPrize = (prizePool * SILVER_PLACE_PERCENTAGE) / 10000;
         uint256 bronzePrize = (prizePool * BRONZE_PLACE_PERCENTAGE) / 10000;
-        uint256 loyaltyPrize = (prizePool * LOYALTY_PERCENTAGE) / 10000;
         uint256 fee = (prizePool * FEE_PERCENTAGE) / 10000;
-    
+
+        // Excess fee go to next game
         if (fee > FEE_MAX_IN_ETH) {
             uint256 excessFee = fee - FEE_MAX_IN_ETH;
             fee = FEE_MAX_IN_ETH;
-            // Add the excess fee to the next game's prize pool
             gamePrizePool[currentGameNumber] += excessFee;
         }
 
@@ -365,18 +333,9 @@ contract Lottery is Ownable, ReentrancyGuard {
         uint256 goldPrizePerWinner = goldWinnerCount > 0 ? goldPrize / goldWinnerCount : 0;
         uint256 silverPrizePerWinner = silverWinnerCount > 0 ? silverPrize / silverWinnerCount : 0;
         uint256 bronzePrizePerWinner = bronzeWinnerCount > 0 ? bronzePrize / bronzeWinnerCount : 0;
-        uint256 loyaltyTotalPrize = bronzeWinnerCount > 0 ? loyaltyPrize : 0;
-
-        // Calculate paid out amounts (which may be less than the total prize due to rounding down)
-        uint256 goldPaidOut = goldPrizePerWinner * goldWinnerCount;
-        uint256 silverPaidOut = silverPrizePerWinner * silverWinnerCount;
-        uint256 bronzePaidOut = bronzePrizePerWinner * bronzeWinnerCount;
-
-        // Calculate unclaimed prizes
-        uint256 prizeRemainder = prizePool - (goldPaidOut + silverPaidOut + bronzePaidOut + loyaltyTotalPrize + fee);
 
         // Store game outcomes and payout information
-        gamePayouts[gameNumber] = [goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyTotalPrize];
+        gamePayouts[gameNumber] = [goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner];
         gameDrawnBlock[gameNumber] = block.number;
 
         if (goldWinnerCount > 0) {
@@ -387,19 +346,21 @@ contract Lottery is Ownable, ReentrancyGuard {
             consecutiveJackpotGames = 0;
         }
 
-        // Transfer unclaimed prize to the next game
+        // Send remainder scraps to the next game prize pool
+        uint256 goldPaidOut = goldPrizePerWinner * goldWinnerCount;
+        uint256 silverPaidOut = silverPrizePerWinner * silverWinnerCount;
+        uint256 bronzePaidOut = bronzePrizePerWinner * bronzeWinnerCount;
+        uint256 prizeRemainder = prizePool - (goldPaidOut + silverPaidOut + bronzePaidOut + fee);
+
         if (prizeRemainder > 0) {
             gamePrizePool[currentGameNumber] += prizeRemainder;
             emit RemainderPrizeTransferred(gameNumber, currentGameNumber, prizeRemainder);
         }
 
-        // Mark the game as completed
         gameDrawCompleted[gameNumber] = true;
+        emit GamePrizePayoutInfo(gameNumber, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner);
 
-        // Emit event with payout information
-        emit GamePrizePayoutInfo(gameNumber, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, loyaltyPrize);
-
-        // Transfer fees to the fee recipient
+        // Send fee
         (bool success, ) = payable(feeRecipient).call{value: fee}("");
         require(success, "Fee transfer failed");
     }
@@ -407,23 +368,21 @@ contract Lottery is Ownable, ReentrancyGuard {
     function claimPrize(uint256 gameNumber) external nonReentrant {
         require(gameDrawCompleted[gameNumber] == true, "Game draw not completed yet");
         require(prizesClaimed[gameNumber][msg.sender] != true, "Prize already claimed");
+        require(currentGameNumber <= gameNumber + CLAIM_PERIOD_GAMES, "Claim period has ended");
 
         uint256[4] memory payouts = gamePayouts[gameNumber];
         uint256 totalPrize = 0;
 
-        // Check Gold prize
         bytes32 goldTicketHash = computeGoldTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1], gameWinningNumbers[gameNumber][2], gameWinningNumbers[gameNumber][3]);
         if (goldTicketOwners[gameNumber][goldTicketHash][msg.sender]) {
             totalPrize += payouts[0];
         }
 
-        // Check Silver prize
         bytes32 silverTicketHash = computeSilverTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1], gameWinningNumbers[gameNumber][2]);
         if (silverTicketOwners[gameNumber][silverTicketHash][msg.sender]) {
             totalPrize += payouts[1];
         }
 
-        // Check Bronze prize
         bytes32 bronzeTicketHash = computeBronzeTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1]);
         if (bronzeTicketOwners[gameNumber][bronzeTicketHash][msg.sender]) {
             totalPrize += payouts[2];
@@ -436,62 +395,6 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(success, "Transfer failed");
 
         emit PrizeClaimed(gameNumber, msg.sender, totalPrize);
-    }
-
-    function distributeLoyaltyPrize(uint256 gameNumber, address[] calldata bronzeWinners) external nonReentrant {
-        require(gameDrawCompleted[gameNumber], "Prizes not yet calculated for this game");
-        require(!prizesLoyaltyDistributed[gameNumber], "Loyalty prizes already distributed for this game");
-
-        uint256 loyaltyPrize = gamePayouts[gameNumber][3];
-        require(loyaltyPrize > 0, "No loyalty prize for this game");
-
-        bytes32 bronzeTicketHash = computeBronzeTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1]);
-        uint256 bronzeWinnerCount = bronzeTicketCounts[gameNumber][bronzeTicketHash];
-        require(bronzeWinners.length == bronzeWinnerCount, "Incorrect number of bronze winners provided");
-
-        uint256 highestGamesPlayed = 0;
-        uint256 winnerCount = 0;
-        address[] memory loyaltyWinners = new address[](bronzeWinners.length);
-
-        // Check for duplicates and validate bronze winners
-        for (uint256 i = 0; i < bronzeWinners.length; i++) {
-            address currentWinner = bronzeWinners[i];
-            
-            // Check if this address is actually a bronze winner
-            require(bronzeTicketOwners[gameNumber][bronzeTicketHash][currentWinner], "Address is not a valid bronze winner");
-            
-            // Check for duplicates
-            for (uint256 j = 0; j < i; j++) {
-                require(bronzeWinners[j] != currentWinner, "Duplicate address in bronze winners");
-            }
-
-            uint256 playerGames = playerTotalGamesPlayed[currentWinner];
-            
-            if (playerGames > highestGamesPlayed) {
-                highestGamesPlayed = playerGames;
-                winnerCount = 1;
-                loyaltyWinners[0] = currentWinner;
-            } else if (playerGames == highestGamesPlayed) {
-                loyaltyWinners[winnerCount] = currentWinner;
-                winnerCount++;
-            }
-        }
-
-        require(winnerCount > 0, "No eligible winners for loyalty prize");
-
-        uint256 prizePerWinner = loyaltyPrize / winnerCount;
-        uint256 remainderPrize = loyaltyPrize % winnerCount;
-
-        for (uint256 i = 0; i < winnerCount; i++) {
-            uint256 prize = prizePerWinner;
-            if (i == 0) prize += remainderPrize; // Add any remainder to the first winner
-            
-            (bool success, ) = payable(loyaltyWinners[i]).call{value: prize}("");
-            require(success, "Transfer failed");
-        }
-
-        prizesLoyaltyDistributed[gameNumber] = true;
-        emit LoyaltyPrizeDistributed(gameNumber, loyaltyWinners, prizePerWinner);
     }
 
     function mintWinningNFT(uint256 gameNumber) external nonReentrant {
@@ -512,7 +415,7 @@ contract Lottery is Ownable, ReentrancyGuard {
 
     function releaseUnclaimedPrizes(uint256 gameNumber) external {
         require(gameDrawCompleted[gameNumber] == true, "Game must be completed");
-        require(block.number >= gameDrawnBlock[gameNumber] + BLOCKS_CLAIM_PERIOD && gameDrawnBlock[gameNumber] != 0, "Must wait BLOCKS_CLAIM_PERIOD period before releasing unclaimed prizes");
+        require(currentGameNumber > gameNumber + CLAIM_PERIOD_GAMES, "Must wait for claim periods to end");
         require(gamePrizePool[gameNumber] > 0, "Prize pool must be non-zero");
 
         uint256 unclaimedAmount = gamePrizePool[gameNumber];
