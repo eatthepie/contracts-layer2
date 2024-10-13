@@ -36,11 +36,22 @@ contract LotteryBasicTest is Test {
 
     function fundLottery(uint256 ticketCount) internal {
         vm.startPrank(player);
-        uint256[3] memory numbers = [uint256(10), uint256(10), uint256(10)];
-        uint256 etherball = 1;
-        for (uint i = 0; i < ticketCount; i++) {
-            lottery.buyTicket{value: TICKET_PRICE}(numbers, etherball);
+        
+        uint256 remainingTickets = ticketCount;
+        while (remainingTickets > 0) {
+            uint256 batchSize = remainingTickets > 100 ? 100 : remainingTickets;
+            
+            uint256[4][] memory tickets = new uint256[4][](batchSize);
+            for (uint256 i = 0; i < batchSize; i++) {
+                tickets[i] = [uint256(10), uint256(10), uint256(10), uint256(1)];
+            }
+            
+            uint256 batchCost = TICKET_PRICE * batchSize;
+            lottery.buyTickets{value: batchCost}(tickets);
+            
+            remainingTickets -= batchSize;
         }
+        
         vm.stopPrank();
     }
 
@@ -405,15 +416,25 @@ contract LotteryBasicTest is Test {
         setupDrawAndVDF();
         lottery.calculatePayouts(gameNumber);
 
-        // Advance block by BLOCKS_CLAIM_PERIOD()
-        vm.roll(block.number + lottery.BLOCKS_CLAIM_PERIOD());
+        // Play CLAIM_PERIOD_GAMES more games to allow for unclaimed prize release
+        vm.pauseGasMetering();
+        for (uint256 i = 0; i <= lottery.CLAIM_PERIOD_GAMES(); i++) {
+            fundLottery(5000);
+            uint256 gameNumber = lottery.currentGameNumber();
+            setupDrawAndVDF();
+            lottery.calculatePayouts(gameNumber);
+        }
+        vm.resumeGasMetering();
+
         uint256 unclaimedAmount = lottery.gamePrizePool(gameNumber);
+        uint256 currentGameNumber = lottery.currentGameNumber();
+        uint256 initialCurrentGamePrizePool = lottery.gamePrizePool(currentGameNumber);
 
-        uint256 initialNextGamePrizePool = lottery.gamePrizePool(lottery.currentGameNumber());
         lottery.releaseUnclaimedPrizes(gameNumber);
-        uint256 newNextGamePrizePool = lottery.gamePrizePool(lottery.currentGameNumber());
 
-        assertEq(newNextGamePrizePool, initialNextGamePrizePool + unclaimedAmount, "Unclaimed prizes should be added to the next game");
+        uint256 newCurrentGamePrizePool = lottery.gamePrizePool(currentGameNumber);
+
+        assertEq(newCurrentGamePrizePool, initialCurrentGamePrizePool + unclaimedAmount, "Unclaimed prizes should be added to the current game");
         assertEq(lottery.gamePrizePool(gameNumber), 0, "Original game prize pool should be emptied");
     }
 
@@ -423,7 +444,7 @@ contract LotteryBasicTest is Test {
         setupDrawAndVDF();
         lottery.calculatePayouts(gameNumber);
 
-        vm.expectRevert("Must wait BLOCKS_CLAIM_PERIOD period before releasing unclaimed prizes");
+        vm.expectRevert("Must wait for claim periods to end");
         lottery.releaseUnclaimedPrizes(gameNumber);
     }
 }
