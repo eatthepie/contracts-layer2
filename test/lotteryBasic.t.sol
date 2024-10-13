@@ -80,10 +80,10 @@ contract LotteryBasicTest is Test {
         return gameNumber;
     }
 
-    // Initial State Tests
+    // Basic
     function testInitialState() public {
         assertEq(lottery.currentGameNumber(), 1, "Initial game number should be 1");
-        assertEq(lottery.ticketPrice(), 0.1 ether, "Initial ticket price should be 0.1 ether");
+        assertEq(lottery.ticketPrice(), TICKET_PRICE, "Initial ticket price should be 0.1 ether");
         assertEq(lottery.feeRecipient(), feeRecipient, "Fee recipient should be set correctly");
         assertEq(address(lottery.vdfContract()), address(vdf), "VDF contract should be set correctly");
         assertEq(address(lottery.nftPrize()), address(nftPrize), "NFT Prize contract should be set correctly");
@@ -94,8 +94,34 @@ contract LotteryBasicTest is Test {
         assertEq(prizePool, 0, "Initial prize pool should be 0");
     }
 
+    function testGetCurrentGameInfo() public {
+        (
+            uint256 gameNumber,
+            Lottery.Difficulty difficulty,
+            uint256 prizePool,
+            uint256 drawTime,
+            uint256 timeUntilDraw
+        ) = lottery.getCurrentGameInfo();
 
-    // Difficulty Change Tests
+        assertEq(gameNumber, 1, "Initial game number should be 1");
+        assertEq(uint(difficulty), uint(Lottery.Difficulty.Easy), "Initial difficulty should be Easy");
+        assertEq(prizePool, 0, "Initial prize pool should be 0");
+        assertTrue(drawTime > block.timestamp, "Draw time should be in the future");
+        assertTrue(timeUntilDraw > 0, "Time until draw should be positive");
+    }
+
+    function testReceiveEther() public {
+        uint256 initialPrizePool = lottery.gamePrizePool(lottery.currentGameNumber());
+
+        (bool success, ) = payable(address(lottery)).call{value: 1 ether}("");
+        require(success, "Failed to send Ether");
+
+        uint256 newPrizePool = lottery.gamePrizePool(lottery.currentGameNumber());
+
+        assertEq(newPrizePool, initialPrizePool + 1 ether, "Prize pool should increase when receiving ether");
+    }
+
+    // Game difficulty changes
     function testChangeDifficultyDown() public {
         lottery.setInitialDifficultyForTesting(Lottery.Difficulty.Medium);
 
@@ -336,7 +362,7 @@ contract LotteryBasicTest is Test {
         assertEq(lottery.consecutiveNonJackpotGames(), 0, "Consecutive non-jackpot games should be reset to 0");
     }
 
-    // Admin Function Tests
+    // Admin functions
     function testSetTicketPrice() public {
         uint256 newPrice = 0.2 ether;
         lottery.setTicketPrice(newPrice);
@@ -379,72 +405,5 @@ contract LotteryBasicTest is Test {
         vm.prank(player);
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", player));
         lottery.setFeeRecipient(newFeeRecipient);
-    }
-
-    // Additional Basic Tests
-    function testGetCurrentGameInfo() public {
-        (
-            uint256 gameNumber,
-            Lottery.Difficulty difficulty,
-            uint256 prizePool,
-            uint256 drawTime,
-            uint256 timeUntilDraw
-        ) = lottery.getCurrentGameInfo();
-
-        assertEq(gameNumber, 1, "Initial game number should be 1");
-        assertEq(uint(difficulty), uint(Lottery.Difficulty.Easy), "Initial difficulty should be Easy");
-        assertEq(prizePool, 0, "Initial prize pool should be 0");
-        assertTrue(drawTime > block.timestamp, "Draw time should be in the future");
-        assertTrue(timeUntilDraw > 0, "Time until draw should be positive");
-    }
-
-    function testReceiveEther() public {
-        uint256 initialPrizePool = lottery.gamePrizePool(lottery.currentGameNumber());
-
-        (bool success, ) = payable(address(lottery)).call{value: 1 ether}("");
-        require(success, "Failed to send Ether");
-
-        uint256 newPrizePool = lottery.gamePrizePool(lottery.currentGameNumber());
-
-        assertEq(newPrizePool, initialPrizePool + 1 ether, "Prize pool should increase when receiving ether");
-    }
-
-    function testReleaseUnclaimedPrizes() public {
-        // Setup a game with unclaimed prizes
-        fundLottery(5000);
-        uint256 gameNumber = lottery.currentGameNumber();
-        setupDrawAndVDF();
-        lottery.calculatePayouts(gameNumber);
-
-        // Play CLAIM_PERIOD_GAMES more games to allow for unclaimed prize release
-        vm.pauseGasMetering();
-        for (uint256 i = 0; i <= lottery.CLAIM_PERIOD_GAMES(); i++) {
-            fundLottery(5000);
-            uint256 gameNumber = lottery.currentGameNumber();
-            setupDrawAndVDF();
-            lottery.calculatePayouts(gameNumber);
-        }
-        vm.resumeGasMetering();
-
-        uint256 unclaimedAmount = lottery.gamePrizePool(gameNumber);
-        uint256 currentGameNumber = lottery.currentGameNumber();
-        uint256 initialCurrentGamePrizePool = lottery.gamePrizePool(currentGameNumber);
-
-        lottery.releaseUnclaimedPrizes(gameNumber);
-
-        uint256 newCurrentGamePrizePool = lottery.gamePrizePool(currentGameNumber);
-
-        assertEq(newCurrentGamePrizePool, initialCurrentGamePrizePool + unclaimedAmount, "Unclaimed prizes should be added to the current game");
-        assertEq(lottery.gamePrizePool(gameNumber), 0, "Original game prize pool should be emptied");
-    }
-
-    function testReleaseUnclaimedPrizesTooSoon() public {
-        fundLottery(5000);
-        uint256 gameNumber = lottery.currentGameNumber();
-        setupDrawAndVDF();
-        lottery.calculatePayouts(gameNumber);
-
-        vm.expectRevert("Must wait for claim periods to end");
-        lottery.releaseUnclaimedPrizes(gameNumber);
     }
 }

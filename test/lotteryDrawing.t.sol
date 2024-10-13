@@ -14,6 +14,7 @@ contract LotteryDrawingTest is Test {
     address owner = address(this);
     address player = address(0x2);
     address feeRecipient = address(0x4);
+    uint256 public constant TICKET_PRICE = 0.1 ether;
 
     function setUp() public {
         vm.startPrank(owner);
@@ -26,11 +27,22 @@ contract LotteryDrawingTest is Test {
     function fundLottery() internal {
         vm.deal(player, 1000 ether);
         vm.startPrank(player);
-        uint256[3] memory numbers = [uint256(1), uint256(2), uint256(3)];
-        uint256 etherball = 1;
-        for (uint i = 0; i < 5000; i++) {
-            lottery.buyTicket{value: 0.1 ether}(numbers, etherball);
+        uint256 remainingTickets = 5000;
+
+        while (remainingTickets > 0) {
+            uint256 batchSize = remainingTickets > 100 ? 100 : remainingTickets;
+            
+            uint256[4][] memory tickets = new uint256[4][](batchSize);
+            for (uint256 i = 0; i < batchSize; i++) {
+                tickets[i] = [uint256(1), uint256(2), uint256(3), uint256(1)];
+            }
+            
+            uint256 batchCost = TICKET_PRICE * batchSize;
+            lottery.buyTickets{value: batchCost}(tickets);
+            
+            remainingTickets -= batchSize;
         }
+        
         vm.stopPrank();
     }
 
@@ -119,11 +131,11 @@ contract LotteryDrawingTest is Test {
         assertEq(lottery.ticketPrice(), newPrice, "Ticket price should have changed");
 
         // Try to buy a ticket with the new price
-        uint256[3] memory numbers = [uint256(1), uint256(2), uint256(3)];
-        uint256 etherball = 1;
+        uint256[4][] memory tickets = new uint256[4][](1);
+        tickets[0] = [uint256(1), uint256(2), uint256(3), uint256(1)];
         vm.deal(player, newPrice);
         vm.prank(player);
-        lottery.buyTicket{value: newPrice}(numbers, etherball);
+        lottery.buyTickets{value: newPrice}(tickets);
 
         // Verify the ticket was purchased successfully
         (,, uint256 prizePool,,) = lottery.getCurrentGameInfo();

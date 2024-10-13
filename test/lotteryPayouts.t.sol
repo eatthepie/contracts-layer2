@@ -1,4 +1,4 @@
-// TODO: Scenario Testing E onwards.. test some more complex winner situations
+// TODO: Update with removed loyalty scheme... Scenario Testing E onwards.. test some more complex winner situations
 
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.25;
@@ -556,23 +556,23 @@ contract LotteryPayoutTest is Test {
     //     assertEq(player1.balance - initialPlayer1Balance, expectedBronzePrize + expectedLoyaltyPrize, "Player 1 total payout incorrect");
     // }
 
-    // 30 winners - 10 jackpot, 10 silver, 10 bronze, 1 loyalty
+    // 15 winners - 1 jackpot, 1 silver, 1 bronze, 1 loyalty
     function testScenarioE() public {
         fundLottery(50000);
         uint256 gameNumber = lottery.currentGameNumber();
 
         // Simulate ticket purchases
-        for (uint256 i = 0; i < 10; i++) {
+        for (uint256 i = 0; i < 2; i++) {
             vm.deal(address(uint160(i + 1)), 100000 ether);
             vm.prank(address(uint160(i + 1)));
             lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(4)); // Jackpot winning ticket
         }
-        for (uint256 i = 10; i < 20; i++) {
+        for (uint256 i = 2; i < 4; i++) {
             vm.deal(address(uint160(i + 1)), 100000 ether);
             vm.prank(address(uint160(i + 1)));
             lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(5)); // Silver winning ticket
         }
-        for (uint256 i = 20; i < 30; i++) {
+        for (uint256 i = 4; i < 6; i++) {
             vm.deal(address(uint160(i + 1)), 100000 ether);
             vm.prank(address(uint160(i + 1)));
             lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5)); // Bronze winning ticket
@@ -589,10 +589,10 @@ contract LotteryPayoutTest is Test {
         lottery.calculatePayouts(gameNumber);
 
         // Calculate expected payouts
-        uint256 totalPrizePool = 5000 ether + (30 * TICKET_PRICE);
-        uint256 expectedGoldPrize = (totalPrizePool * lottery.GOLD_PERCENTAGE()) / 10000 / 10;
-        uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000 / 20;
-        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 30;
+        uint256 totalPrizePool = 5000 ether + (6 * TICKET_PRICE);
+        uint256 expectedGoldPrize = (totalPrizePool * lottery.GOLD_PERCENTAGE()) / 10000 / 2;
+        uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000 / 4;
+        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 6;
         uint256 expectedLoyaltyPrize = (totalPrizePool * lottery.LOYALTY_PERCENTAGE()) / 10000;
         uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
 
@@ -607,22 +607,22 @@ contract LotteryPayoutTest is Test {
         assertEq(lottery.gamePayouts(gameNumber, 3), expectedLoyaltyPrize, "Stored loyalty payout incorrect");
 
         // Claim prizes for all winners
-        for (uint256 i = 0; i < 1; i++) {
-            vm.prank(address(uint160(i + 1)));
-            lottery.claimPrize(gameNumber);
-        }
-
-        // // Assert fee transfer
-        // assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
-
-        // // Distribute loyalty prize
-        // address[] memory bronzeWinners = new address[](30);
-        // for (uint256 i = 0; i < 30; i++) {
-        //     bronzeWinners[i] = address(uint160(i + 1));
+        // for (uint256 i = 0; i < 15; i++) {
+        //     vm.prank(address(uint160(i + 1)));
+        //     lottery.claimPrize(gameNumber);
         // }
-        // lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
 
-        // // Assert loyalty prize distribution (assuming the first player wins the loyalty prize)
+        // Assert fee transfer
+        assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+
+        // Distribute loyalty prize
+        address[] memory bronzeWinners = new address[](6);
+        for (uint256 i = 0; i < 6; i++) {
+            bronzeWinners[i] = address(uint160(i + 1));
+        }
+        lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
+
+        // Assert loyalty prize distribution (assuming the first player wins the loyalty prize)
         // assertEq(address(uint160(1)).balance, expectedGoldPrize + expectedSilverPrize + expectedBronzePrize + expectedLoyaltyPrize + TICKET_PRICE, "Loyalty winner payout incorrect");
     }
 

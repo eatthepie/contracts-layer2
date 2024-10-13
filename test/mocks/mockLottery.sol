@@ -11,10 +11,6 @@ contract MockLottery is Lottery {
         gameWinningNumbers[gameNumber] = numbers;
     }
 
-    function setPlayerTotalGamesForTesting(address player, uint256 gamesPlayed) external {
-        playerTotalGamesPlayed[player] = gamesPlayed;
-    }
-
     function setInitialDifficultyForTesting(Difficulty _difficulty) external {
         gameDifficulty[currentGameNumber] = _difficulty;
     }
