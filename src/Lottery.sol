@@ -34,7 +34,6 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant DRAW_MIN_PRIZE_POOL = 500 ether;
     uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
     uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // ~4 epoch delay 
-    uint256 public constant CLAIM_PERIOD_GAMES = 24; // 24 games to claim (~6 months)
 
     address public feeRecipient;
     uint256 public ticketPrice;
@@ -89,12 +88,11 @@ contract Lottery is Ownable, ReentrancyGuard {
     event WinningNumbersSet(uint256 indexed gameNumber, uint256 number1, uint256 number2, uint256 number3, uint256 etherball);
     event DifficultyChanged(uint256 gameNumber, Difficulty newDifficulty);
     event TicketPriceChangeScheduled(uint256 newPrice, uint256 effectiveGameNumber);
-    event RemainderPrizeTransferred(uint256 fromGame, uint256 toGame, uint256 amount);
+    event ExcessPrizePoolTransferred(uint256 fromGame, uint256 toGame, uint256 amount);
     event GamePrizePayoutInfo(uint256 gameNumber, uint256 goldPrize, uint256 silverPrize, uint256 bronzePrize);
     event FeeRecipientChanged(address newFeeRecipient);
     event PrizeClaimed(uint256 gameNumber, address player, uint256 amount);
     event NFTMinted(address indexed winner, uint256 indexed tokenId, uint256 indexed gameNumber);
-    event UnclaimedPrizesReleased(uint256 fromGame, uint256 toGame, uint256 amount);
 
     constructor(address _vdfContractAddress, address _nftPrizeAddress, address _feeRecipient) Ownable(msg.sender) {
         vdfContract = VDFPietrzak(_vdfContractAddress);
@@ -166,16 +164,16 @@ contract Lottery is Ownable, ReentrancyGuard {
     }
 
     // ticket hashes
-    function computeBronzeTicketHash(uint256 numberOne, uint256 numberTwo) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(numberOne, numberTwo));
+    function computeGoldTicketHash(uint256 numberOne, uint256 numberTwo, uint256 numberThree, uint256 etherball) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(numberOne, numberTwo, numberThree, etherball));
     }
 
     function computeSilverTicketHash(uint256 numberOne, uint256 numberTwo, uint256 numberThree) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(numberOne, numberTwo, numberThree));
     }
 
-    function computeGoldTicketHash(uint256 numberOne, uint256 numberTwo, uint256 numberThree, uint256 etherball) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(numberOne, numberTwo, numberThree, etherball));
+    function computeBronzeTicketHash(uint256 numberOne, uint256 numberTwo) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(numberOne, numberTwo));
     }
 
     // drawing
@@ -347,15 +345,16 @@ contract Lottery is Ownable, ReentrancyGuard {
             consecutiveJackpotGames = 0;
         }
 
-        // Send remainder scraps to the next game prize pool
+        // Send any excess prize pool to next game
         uint256 goldPaidOut = goldPrizePerWinner * goldWinnerCount;
         uint256 silverPaidOut = silverPrizePerWinner * silverWinnerCount;
         uint256 bronzePaidOut = bronzePrizePerWinner * bronzeWinnerCount;
-        uint256 prizeRemainder = prizePool - (goldPaidOut + silverPaidOut + bronzePaidOut + fee);
 
-        if (prizeRemainder > 0) {
-            gamePrizePool[currentGameNumber] += prizeRemainder;
-            emit RemainderPrizeTransferred(gameNumber, currentGameNumber, prizeRemainder);
+        uint256 excessPrizePool = prizePool - (goldPaidOut + silverPaidOut + bronzePaidOut + fee);
+
+        if (excessPrizePool > 0) {
+            gamePrizePool[currentGameNumber] += excessPrizePool;
+            emit ExcessPrizePoolTransferred(gameNumber, currentGameNumber, excessPrizePool);
         }
 
         gameDrawCompleted[gameNumber] = true;
@@ -369,7 +368,6 @@ contract Lottery is Ownable, ReentrancyGuard {
     function claimPrize(uint256 gameNumber) external nonReentrant {
         require(gameDrawCompleted[gameNumber] == true, "Game draw not completed yet");
         require(prizesClaimed[gameNumber][msg.sender] != true, "Prize already claimed");
-        require(currentGameNumber <= gameNumber + CLAIM_PERIOD_GAMES, "Claim period has ended");
 
         uint256[3] memory payouts = gamePayouts[gameNumber];
         uint256 totalPrize = 0;
@@ -412,18 +410,6 @@ contract Lottery is Ownable, ReentrancyGuard {
 
         hasClaimedNFT[gameNumber][msg.sender] = true;
         emit NFTMinted(msg.sender, tokenId, gameNumber);
-    }
-
-    function releaseUnclaimedPrizes(uint256 gameNumber) external {
-        require(gameDrawCompleted[gameNumber] == true, "Game must be completed");
-        require(currentGameNumber > gameNumber + CLAIM_PERIOD_GAMES, "Must wait for claim periods to end");
-        require(gamePrizePool[gameNumber] > 0, "Prize pool must be non-zero");
-
-        uint256 unclaimedAmount = gamePrizePool[gameNumber];
-        gamePrizePool[gameNumber] = 0;
-        gamePrizePool[currentGameNumber] += unclaimedAmount;
-
-        emit UnclaimedPrizesReleased(gameNumber, currentGameNumber, unclaimedAmount);
     }
 
     function changeDifficulty() external {

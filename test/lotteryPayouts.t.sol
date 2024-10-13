@@ -1,5 +1,3 @@
-// TODO: Update with removed loyalty scheme... Scenario Testing E onwards.. test some more complex winner situations
-
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.25;
 
@@ -34,13 +32,30 @@ contract LotteryPayoutTest is Test {
         vm.deal(player3, 100000 ether);
     }
 
+    function wrapTicket(uint256[4] memory ticket) internal pure returns (uint256[4][] memory) {
+        uint256[4][] memory wrappedTicket = new uint256[4][](1);
+        wrappedTicket[0] = ticket;
+        return wrappedTicket;
+    }
+
     function fundLottery(uint256 ticketCount) internal {
         vm.startPrank(player);
-        uint256[3] memory numbers = [uint256(10), uint256(10), uint256(10)];
-        uint256 etherball = 1;
-        for (uint i = 0; i < ticketCount; i++) {
-            lottery.buyTicket{value: 0.1 ether}(numbers, etherball);
+        
+        uint256 remainingTickets = ticketCount;
+        while (remainingTickets > 0) {
+            uint256 batchSize = remainingTickets > 100 ? 100 : remainingTickets;
+            
+            uint256[4][] memory tickets = new uint256[4][](batchSize);
+            for (uint256 i = 0; i < batchSize; i++) {
+                tickets[i] = [uint256(10), uint256(10), uint256(10), uint256(1)];
+            }
+            
+            uint256 batchCost = TICKET_PRICE * batchSize;
+            lottery.buyTickets{value: batchCost}(tickets);
+            
+            remainingTickets -= batchSize;
         }
+        
         vm.stopPrank();
     }
 
@@ -147,435 +162,263 @@ contract LotteryPayoutTest is Test {
         );
     }
 
-    // loyalty prize pool payouts
-    function testSingleLoyaltyWinner() public {
-        fundLottery(5000);
-        uint256 gameNumber = lottery.currentGameNumber();
-
-        // Simulate ticket purchases for bronze winners
-        vm.prank(player1);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(4));
-        vm.prank(player2);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5));
-        vm.prank(player3);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(5)], uint256(5));
-
-        // Simulate VDF submission and validation
-        setupDrawAndVDF();
-
-        // Set winning numbers for testing (only first two matter for bronze)
-        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
-        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
-
-        // Calculate payouts
-        lottery.calculatePayouts(gameNumber);
-
-        uint256 loyaltyPrize = lottery.gamePayouts(gameNumber, 3);
-
-        // Set different total games played for players
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player1, 10);
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player2, 5);
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player3, 3);
-
-        address[] memory bronzeWinners = new address[](3);
-        bronzeWinners[0] = player1;
-        bronzeWinners[1] = player2;
-        bronzeWinners[2] = player3;
-
-        uint256 initialBalance1 = player1.balance;
-        uint256 initialBalance2 = player2.balance;
-        uint256 initialBalance3 = player3.balance;
-
-        lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
-
-        assertEq(player1.balance, initialBalance1 + loyaltyPrize, "Player 1 should receive full loyalty prize");
-        assertEq(player2.balance, initialBalance2, "Player 2 should not receive any prize");
-        assertEq(player3.balance, initialBalance3, "Player 3 should not receive any prize");
-        assertTrue(lottery.prizesLoyaltyDistributed(gameNumber), "Loyalty prizes should be marked as distributed");
-    }
-
-    function testMultipleLoyaltyWinners() public {
-        fundLottery(5000);
-        uint256 gameNumber = lottery.currentGameNumber();
-
-        // Simulate ticket purchases for bronze winners
-        vm.prank(player1);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(4));
-        vm.prank(player2);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5));
-        vm.prank(player3);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(5)], uint256(5));
-
-        // Simulate VDF submission and validation
-        setupDrawAndVDF();
-
-        // Set winning numbers for testing (only first two matter for bronze)
-        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
-        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
-
-        // Calculate payouts
-        lottery.calculatePayouts(gameNumber);
-
-        uint256 loyaltyPrize = lottery.gamePayouts(gameNumber, 3);
-
-        // Set different total games played for players
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player1, 10);
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player2, 10);
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player3, 3);
-
-        address[] memory bronzeWinners = new address[](3);
-        bronzeWinners[0] = player1;
-        bronzeWinners[1] = player2;
-        bronzeWinners[2] = player3;
-
-        uint256 initialBalance1 = player1.balance;
-        uint256 initialBalance2 = player2.balance;
-        uint256 initialBalance3 = player3.balance;
-
-        lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
-
-        assertEq(player1.balance, initialBalance1 + loyaltyPrize / 2, "Player 1 should receive half the loyalty prize");
-        assertEq(player2.balance, initialBalance2 + loyaltyPrize / 2, "Player 2 should receive half the loyalty prize");
-        assertEq(player3.balance, initialBalance3, "Player 3 should not receive any prize");
-        assertTrue(lottery.prizesLoyaltyDistributed(gameNumber), "Loyalty prizes should be marked as distributed");
-    }
-
-    function testAllEqualLoyaltyWinners() public {
-        fundLottery(5000);
-        uint256 gameNumber = lottery.currentGameNumber();
-
-        // Simulate ticket purchases for bronze winners
-        vm.prank(player1);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(4));
-        vm.prank(player2);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5));
-        vm.prank(player3);
-        lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(5)], uint256(5));
-
-        // Simulate VDF submission and validation
-        setupDrawAndVDF();
-
-        // Set winning numbers for testing (only first two matter for bronze)
-        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
-        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
-
-        // Calculate payouts
-        lottery.calculatePayouts(gameNumber);
-
-        uint256 loyaltyPrize = lottery.gamePayouts(gameNumber, 3);
-
-        // Set different total games played for players
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player1, 10);
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player2, 10);
-        vm.prank(owner);
-        lottery.setPlayerTotalGamesForTesting(player3, 10);
-
-        address[] memory bronzeWinners = new address[](3);
-        bronzeWinners[0] = player1;
-        bronzeWinners[1] = player2;
-        bronzeWinners[2] = player3;
-
-        uint256 initialBalance1 = player1.balance;
-        uint256 initialBalance2 = player2.balance;
-        uint256 initialBalance3 = player3.balance;
-
-        lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
-
-        uint256 expectedPrizePerWinner = loyaltyPrize / 3;
-        uint256 remainder = loyaltyPrize % 3;
-
-        assertEq(player1.balance, initialBalance1 + expectedPrizePerWinner + remainder, "Player 1 should receive 1/3 the loyalty prize");
-        assertEq(player2.balance, initialBalance2 + expectedPrizePerWinner, "Player 2 should receive 1/3 the loyalty prize");
-        assertEq(player3.balance, initialBalance3 + expectedPrizePerWinner, "Player 3 should receive 1/3 the loyalty prize");
-        assertTrue(lottery.prizesLoyaltyDistributed(gameNumber), "Loyalty prizes should be marked as distributed");
-    }
-
     /* Scenario Testing */
 
     // no winners
     // prize pool - 500ETH
-    // function testScenarioA() public {
-    //     fundLottery(5000);
-    //     uint256 gameNumber = lottery.currentGameNumber();
-    //     setupDrawAndVDF();
+    function testScenarioA() public {
+        fundLottery(5000);
+        uint256 gameNumber = lottery.currentGameNumber();
+        setupDrawAndVDF();
 
-    //     // Set winning numbers for testing
-    //     uint256[4] memory winningNumbers = [uint256(12), uint256(12), uint256(13), uint256(14)];
-    //     lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
+        // Set winning numbers for testing
+        uint256[4] memory winningNumbers = [uint256(12), uint256(12), uint256(13), uint256(14)];
+        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
+        lottery.calculatePayouts(gameNumber);
 
-    //     lottery.calculatePayouts(gameNumber);
+        // Verify payout information
+        uint256 goldPayout = lottery.gamePayouts(gameNumber, 0);
+        uint256 silverPayout = lottery.gamePayouts(gameNumber, 1);
+        uint256 bronzePayout = lottery.gamePayouts(gameNumber, 2);
 
-    //     // Verify payout information
-    //     uint256 goldPayout = lottery.gamePayouts(gameNumber, 0);
-    //     uint256 silverPayout = lottery.gamePayouts(gameNumber, 1);
-    //     uint256 bronzePayout = lottery.gamePayouts(gameNumber, 2);
-    //     uint256 loyaltyPayout = lottery.gamePayouts(gameNumber, 3);
+        assertEq(goldPayout, 0, "Gold prize should be zero");
+        assertEq(silverPayout, 0, "Silver prize should be zero");
+        assertEq(bronzePayout, 0, "Bronze prize should be zero");
 
-    //     assertEq(goldPayout, 0, "Gold prize should be zero");
-    //     assertEq(silverPayout, 0, "Silver prize should be zero");
-    //     assertEq(bronzePayout, 0, "Bronze prize should be zero");
-    //     assertEq(loyaltyPayout, 0, "Loyalty prize should be zero");
+        // Check that the prize pool is transferred to the next game
+        uint256 nextGamePrizePool = lottery.gamePrizePool(lottery.currentGameNumber());
+        uint256 expectedPrizePool = (lottery.DRAW_MIN_PRIZE_POOL() * 9900) / 10000; // Minus 1% fee
+        assertApproxEqAbs(nextGamePrizePool, expectedPrizePool, 1e15, "Prize pool should be transferred to next game");
+    }
 
-    //     // Check that the prize pool is transferred to the next game
-    //     uint256 nextGamePrizePool = lottery.gamePrizePool(lottery.currentGameNumber());
-    //     uint256 expectedPrizePool = (lottery.DRAW_MIN_PRIZE_POOL() * 9900) / 10000; // Minus 1% fee
-    //     assertApproxEqAbs(nextGamePrizePool, expectedPrizePool, 1e15, "Prize pool should be transferred to next game");
-    // }
-
-    // 3 winners - 1 jackpot, 1 silver, 1 bronze, 3 loyalty
+    // 3 winners - 1 jackpot, 1 silver, 1 bronze
     // prize pool: 500.3ETH
-    // function testScenarioB() public {
-    //     fundLottery(5000);
-    //     uint256 gameNumber = lottery.currentGameNumber();
-
-    //     // Simulate ticket purchases
-    //     vm.prank(player1);
-    //     lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(4)); // Jackpot winning ticket
-    //     vm.prank(player2);
-    //     lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(5)); // Silver winning ticket
-    //     vm.prank(player3);
-    //     lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5)); // Bronze winning ticket
-
-    //     // Simulate VDF submission and validation
-    //     setupDrawAndVDF();
-
-    //     // Set winning numbers for testing
-    //     uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
-    //     lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
-
-    //     // Record balances before payout
-    //     uint256 initialPlayer1Balance = player1.balance;
-    //     uint256 initialPlayer2Balance = player2.balance;
-    //     uint256 initialPlayer3Balance = player3.balance;
-    //     uint256 initialFeeRecipientBalance = feeRecipient.balance;
-
-    //     // Calculate payouts
-    //     lottery.calculatePayouts(gameNumber);
-
-    //     // Calculate expected payouts
-    //     uint256 totalPrizePool = 500 ether + (3 * TICKET_PRICE);
-    //     uint256 expectedGoldPrize = (totalPrizePool * lottery.GOLD_PERCENTAGE()) / 10000;
-    //     uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000;
-    //     uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000;
-    //     uint256 expectedLoyaltyPrize = (totalPrizePool * lottery.LOYALTY_PERCENTAGE()) / 10000;
-    //     uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
-
-    //     if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
-    //         expectedFee = lottery.FEE_MAX_IN_ETH();
-    //     }
-
-    //     bytes32 goldTicketHash = keccak256(abi.encodePacked(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]));
-    //     uint256 goldWinners = lottery.goldTicketCounts(gameNumber, goldTicketHash);
-    //     assertEq(goldWinners, 1, "There should be exactly one gold ticket winner");
-
-    //     bytes32 silverTicketHash = keccak256(abi.encodePacked(winningNumbers[0], winningNumbers[1], winningNumbers[2]));
-    //     uint256 silverWinners = lottery.silverTicketCounts(gameNumber, silverTicketHash);
-    //     assertEq(silverWinners, 2, "There should be exactly two silver ticket winners");
-
-    //     // Assert game state
-    //     assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
-
-    //     // Verify payout information
-    //     uint256 goldPayout = lottery.gamePayouts(gameNumber, 0);
-    //     uint256 silverPayout = lottery.gamePayouts(gameNumber, 1);
-    //     uint256 bronzePayout = lottery.gamePayouts(gameNumber, 2);
-    //     uint256 loyaltyPayout = lottery.gamePayouts(gameNumber, 3);
-
-    //     assertEq(goldPayout, expectedGoldPrize, "Stored gold payout incorrect");
-    //     assertEq(silverPayout, expectedSilverPrize / 2, "Stored silver payout incorrect");
-    //     assertEq(bronzePayout, expectedBronzePrize / 3, "Stored bronze payout incorrect");
-    //     assertEq(loyaltyPayout, expectedLoyaltyPrize, "Stored loyalty payout incorrect");
-
-    //     // Verify ticket counts
-    //     assertEq(lottery.playerTicketCount(player1, gameNumber), 1, "Player 1 ticket count incorrect");
-    //     assertEq(lottery.playerTicketCount(player2, gameNumber), 1, "Player 2 ticket count incorrect");
-    //     assertEq(lottery.playerTicketCount(player3, gameNumber), 1, "Player 3 ticket count incorrect");
-
-    //     // Claim prizes
-    //     vm.prank(player1);
-    //     lottery.claimPrize(gameNumber);
-    //     vm.prank(player2);
-    //     lottery.claimPrize(gameNumber);
-    //     vm.prank(player3);
-    //     lottery.claimPrize(gameNumber);
-
-    //     // Assert payouts
-    //     assertEq(player1.balance - initialPlayer1Balance, goldPayout + silverPayout + bronzePayout, "Gold prize payout incorrect");
-    //     assertEq(player2.balance - initialPlayer2Balance, silverPayout + bronzePayout, "Silver prize payout incorrect");
-    //     assertEq(player3.balance - initialPlayer3Balance, bronzePayout, "Bronze and Loyalty prize payout incorrect");
-    //     assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
-        
-    //     // Create an array of bronze winners
-    //     address[] memory bronzeWinners = new address[](3);
-    //     bronzeWinners[0] = player1;
-    //     bronzeWinners[1] = player2;
-    //     bronzeWinners[2] = player3;
-
-    //     // Record balances before loyalty distribution
-    //     uint256 loyaltyBalancePlayer1 = player1.balance;
-    //     uint256 loyaltyBalancePlayer2 = player2.balance;
-    //     uint256 loyaltyBalancePlayer3 = player3.balance;
-
-    //     // Distribute loyalty prize
-    //     lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
-
-    //     // Check if loyalty prize was distributed
-    //     assertTrue(lottery.prizesLoyaltyDistributed(gameNumber), "Loyalty prizes should be marked as distributed");
-
-    //     // Calculate expected loyalty prize per winner (all should have the same loyalty count in this case)
-    //     uint256 expectedLoyaltyPrizePerWinner = loyaltyPayout / 3;
-    //     uint256 remainder = loyaltyPayout % 3;
-
-    //     // Assert loyalty prize distribution
-    //     assertEq(player1.balance - loyaltyBalancePlayer1, expectedLoyaltyPrizePerWinner + remainder, "Player 1 loyalty prize incorrect");
-    //     assertEq(player2.balance - loyaltyBalancePlayer2, expectedLoyaltyPrizePerWinner, "Player 2 loyalty prize incorrect");
-    //     assertEq(player3.balance - loyaltyBalancePlayer3, expectedLoyaltyPrizePerWinner, "Player 3 loyalty prize incorrect");
-    // }
-
-    // 2 winners - 0 jackpot, 1 silver, 1 bronze, 2 loyalty
-    // function testScenarioC() public {
-    //     fundLottery(5000);
-    //     uint256 gameNumber = lottery.currentGameNumber();
-
-    //     // Simulate ticket purchases
-    //     vm.prank(player1);
-    //     lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(5)); // Silver winning ticket
-    //     vm.prank(player2);
-    //     lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5)); // Bronze winning ticket
-
-    //     setupDrawAndVDF();
-
-    //     // Set winning numbers for testing
-    //     uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
-    //     lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
-
-    //     // Record balances before payout
-    //     uint256 initialPlayer1Balance = player1.balance;
-    //     uint256 initialPlayer2Balance = player2.balance;
-    //     uint256 initialFeeRecipientBalance = feeRecipient.balance;
-
-    //     lottery.calculatePayouts(gameNumber);
-
-    //     // Calculate expected payouts
-    //     uint256 totalPrizePool = 500 ether + (2 * TICKET_PRICE);
-    //     uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000;
-    //     uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000;
-    //     uint256 expectedLoyaltyPrize = (totalPrizePool * lottery.LOYALTY_PERCENTAGE()) / 10000;
-    //     uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
-
-    //     if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
-    //         expectedFee = lottery.FEE_MAX_IN_ETH();
-    //     }
-
-    //     // Verify payout information
-    //     assertEq(lottery.gamePayouts(gameNumber, 0), 0, "Gold payout should be zero");
-    //     assertEq(lottery.gamePayouts(gameNumber, 1), expectedSilverPrize, "Stored silver payout incorrect");
-    //     assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize / 2, "Stored bronze payout incorrect");
-    //     assertEq(lottery.gamePayouts(gameNumber, 3), expectedLoyaltyPrize, "Stored loyalty payout incorrect");
-
-    //     // Claim prizes
-    //     vm.prank(player1);
-    //     lottery.claimPrize(gameNumber);
-    //     vm.prank(player2);
-    //     lottery.claimPrize(gameNumber);
-
-    //     // Assert payouts
-    //     assertEq(player1.balance - initialPlayer1Balance, expectedSilverPrize + expectedBronzePrize / 2, "Silver prize payout incorrect");
-    //     assertEq(player2.balance - initialPlayer2Balance, expectedBronzePrize / 2, "Bronze prize payout incorrect");
-    //     assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
-
-    //     // Distribute loyalty prize
-    //     address[] memory bronzeWinners = new address[](2);
-    //     bronzeWinners[0] = player1;
-    //     bronzeWinners[1] = player2;
-    //     lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
-
-    //     // Assert loyalty prize distribution
-    //     assertEq(player1.balance - initialPlayer1Balance, expectedSilverPrize + expectedBronzePrize / 2 + expectedLoyaltyPrize / 2, "Player 1 total payout incorrect");
-    //     assertEq(player2.balance - initialPlayer2Balance, expectedBronzePrize / 2 + expectedLoyaltyPrize / 2, "Player 2 total payout incorrect");
-    // }
-
-    // 1 winner - 0 jackpot, 0 silver, 1 bronze, 1 loyalty
-    // function testScenarioD() public {
-    //     fundLottery(5000);
-    //     uint256 gameNumber = lottery.currentGameNumber();
-
-    //     // Simulate ticket purchase
-    //     vm.prank(player1);
-    //     lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5)); // Bronze winning ticket
-
-    //     setupDrawAndVDF();
-
-    //     // Set winning numbers for testing
-    //     uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
-    //     lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
-
-    //     uint256 initialPlayer1Balance = player1.balance;
-    //     uint256 initialFeeRecipientBalance = feeRecipient.balance;
-
-    //     lottery.calculatePayouts(gameNumber);
-
-    //     // Calculate expected payouts
-    //     uint256 totalPrizePool = 500 ether + TICKET_PRICE;
-    //     uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000;
-    //     uint256 expectedLoyaltyPrize = (totalPrizePool * lottery.LOYALTY_PERCENTAGE()) / 10000;
-    //     uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
-
-    //     if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
-    //         expectedFee = lottery.FEE_MAX_IN_ETH();
-    //     }
-
-    //     // Verify payout information
-    //     assertEq(lottery.gamePayouts(gameNumber, 0), 0, "Gold payout should be zero");
-    //     assertEq(lottery.gamePayouts(gameNumber, 1), 0, "Silver payout should be zero");
-    //     assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize, "Stored bronze payout incorrect");
-    //     assertEq(lottery.gamePayouts(gameNumber, 3), expectedLoyaltyPrize, "Stored loyalty payout incorrect");
-
-    //     // Claim prize
-    //     vm.prank(player1);
-    //     lottery.claimPrize(gameNumber);
-
-    //     // Assert payout
-    //     assertEq(player1.balance - initialPlayer1Balance, expectedBronzePrize, "Bronze prize payout incorrect");
-    //     assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
-
-    //     // Distribute loyalty prize
-    //     address[] memory bronzeWinners = new address[](1);
-    //     bronzeWinners[0] = player1;
-    //     lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
-
-    //     // Assert loyalty prize distribution
-    //     assertEq(player1.balance - initialPlayer1Balance, expectedBronzePrize + expectedLoyaltyPrize, "Player 1 total payout incorrect");
-    // }
-
-    // 15 winners - 1 jackpot, 1 silver, 1 bronze, 1 loyalty
-    function testScenarioE() public {
-        fundLottery(50000);
+    function testScenarioB() public {
+        fundLottery(5000);
         uint256 gameNumber = lottery.currentGameNumber();
 
+        // Define ticket numbers
+        uint256[4] memory goldNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
+        uint256[4] memory silverNumbers = [uint256(1), uint256(2), uint256(3), uint256(5)];
+        uint256[4] memory bronzeNumbers = [uint256(1), uint256(2), uint256(4), uint256(5)];
+
+        // Buy winning tickets
+        vm.prank(player1);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(goldNumbers));
+        vm.prank(player2);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(silverNumbers));
+        vm.prank(player3);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(bronzeNumbers));
+
+        // Record initial balances
+        uint256 initialPlayer1Balance = player1.balance;
+        uint256 initialPlayer2Balance = player2.balance;
+        uint256 initialPlayer3Balance = player3.balance;
+        uint256 initialFeeRecipientBalance = feeRecipient.balance;
+
+        // Run game and set winning numbers
+        setupDrawAndVDF();
+        lottery.setWinningNumbersForTesting(gameNumber, goldNumbers);
+        lottery.calculatePayouts(gameNumber);
+
+        // Calculate expected payouts
+        uint256 totalPrizePool = 500 ether + (3 * TICKET_PRICE);
+        uint256 expectedGoldPrize = (totalPrizePool * lottery.GOLD_PERCENTAGE()) / 10000;
+        uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000;
+        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000;
+        uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
+        if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
+            expectedFee = lottery.FEE_MAX_IN_ETH();
+        }
+
+        // Verify winner counts
+        bytes32 goldTicketHash = keccak256(abi.encodePacked(goldNumbers[0], goldNumbers[1], goldNumbers[2], goldNumbers[3]));
+        bytes32 silverTicketHash = keccak256(abi.encodePacked(goldNumbers[0], goldNumbers[1], goldNumbers[2]));
+        bytes32 bronzeTicketHash = keccak256(abi.encodePacked(goldNumbers[0], goldNumbers[1]));
+
+        assertEq(lottery.goldTicketCounts(gameNumber, goldTicketHash), 1, "There should be exactly one gold ticket winner");
+        assertEq(lottery.silverTicketCounts(gameNumber, silverTicketHash), 2, "There should be exactly two silver ticket winners");
+        assertEq(lottery.bronzeTicketCounts(gameNumber, bronzeTicketHash), 3, "There should be exactly three bronze ticket winners");
+
+        // Assert game state
+        assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
+
+        // Verify payout information
+        uint256 goldPayout = lottery.gamePayouts(gameNumber, 0);
+        uint256 silverPayout = lottery.gamePayouts(gameNumber, 1);
+        uint256 bronzePayout = lottery.gamePayouts(gameNumber, 2);
+
+        assertEq(goldPayout, expectedGoldPrize, "Stored gold payout incorrect");
+        assertEq(silverPayout, expectedSilverPrize / 2, "Stored silver payout incorrect");
+        assertEq(bronzePayout, expectedBronzePrize / 3, "Stored bronze payout incorrect");
+
+        // Verify ticket counts
+        assertEq(lottery.playerTicketCount(player1, gameNumber), 1, "Player 1 ticket count incorrect");
+        assertEq(lottery.playerTicketCount(player2, gameNumber), 1, "Player 2 ticket count incorrect");
+        assertEq(lottery.playerTicketCount(player3, gameNumber), 1, "Player 3 ticket count incorrect");
+
+        // Claim prizes
+        vm.prank(player1);
+        lottery.claimPrize(gameNumber);
+        vm.prank(player2);
+        lottery.claimPrize(gameNumber);
+        vm.prank(player3);
+        lottery.claimPrize(gameNumber);
+
+        // Assert payouts
+        assertEq(player1.balance - initialPlayer1Balance, goldPayout + silverPayout + bronzePayout, "Gold prize payout incorrect");
+        assertEq(player2.balance - initialPlayer2Balance, silverPayout + bronzePayout, "Silver prize payout incorrect");
+        assertEq(player3.balance - initialPlayer3Balance, bronzePayout, "Bronze prize payout incorrect");
+        assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+    }
+
+    // 2 winners - 0 jackpot, 1 silver, 1 bronze
+    function testScenarioC() public {
+        fundLottery(5000);
+        uint256 gameNumber = lottery.currentGameNumber();
+
+        // Define ticket numbers
+        uint256[4] memory silverTicket = [uint256(1), uint256(2), uint256(3), uint256(5)];
+        uint256[4] memory bronzeTicket = [uint256(1), uint256(2), uint256(4), uint256(5)];
+
+        // Buy tickets for players
+        vm.prank(player1);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(silverTicket)); // Silver winning ticket
+        vm.prank(player2);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(bronzeTicket)); // Bronze winning ticket
+
+        // Record balances before payout
+        uint256 initialPlayer1Balance = player1.balance;
+        uint256 initialPlayer2Balance = player2.balance;
+        uint256 initialFeeRecipientBalance = feeRecipient.balance;
+
+        // Run game and set winning numbers
+        setupDrawAndVDF();
+        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
+        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
+        lottery.calculatePayouts(gameNumber);
+
+        // Calculate expected payouts
+        uint256 totalPrizePool = 500 ether + (2 * TICKET_PRICE);
+        uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000;
+        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000;
+        uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
+
+        if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
+            expectedFee = lottery.FEE_MAX_IN_ETH();
+        }
+
+        // Verify payout information
+        assertEq(lottery.gamePayouts(gameNumber, 0), 0, "Gold payout should be zero");
+        assertEq(lottery.gamePayouts(gameNumber, 1), expectedSilverPrize, "Stored silver payout incorrect");
+        assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize / 2, "Stored bronze payout incorrect");
+
+        // Verify ticket counts
+        assertEq(lottery.playerTicketCount(player1, gameNumber), 1, "Player 1 ticket count incorrect");
+        assertEq(lottery.playerTicketCount(player2, gameNumber), 1, "Player 2 ticket count incorrect");
+
+        // Claim prizes
+        vm.prank(player1);
+        lottery.claimPrize(gameNumber);
+        vm.prank(player2);
+        lottery.claimPrize(gameNumber);
+
+        // Assert payouts
+        assertEq(player1.balance - initialPlayer1Balance, expectedSilverPrize + expectedBronzePrize / 2, "Silver prize payout incorrect");
+        assertEq(player2.balance - initialPlayer2Balance, expectedBronzePrize / 2, "Bronze prize payout incorrect");
+        assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+
+        // Verify game state
+        assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
+        assertTrue(lottery.prizesClaimed(gameNumber, player1), "Prize should be marked as claimed for player1");
+        assertTrue(lottery.prizesClaimed(gameNumber, player2), "Prize should be marked as claimed for player2");
+    }
+
+    // 1 winner - 0 jackpot, 0 silver, 1 bronze
+    function testScenarioD() public {
+        fundLottery(5000);
+        uint256 gameNumber = lottery.currentGameNumber();
+
+        // Define ticket numbers
+        uint256[4] memory bronzeTicket = [uint256(1), uint256(2), uint256(4), uint256(5)];
+
+        // Buy ticket for player
+        vm.prank(player1);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(bronzeTicket)); // Bronze winning ticket
+
+        // Record balances before payout
+        uint256 initialPlayer1Balance = player1.balance;
+        uint256 initialFeeRecipientBalance = feeRecipient.balance;
+
+        // Set winning numbers for testing
+        setupDrawAndVDF();
+        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
+        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
+        lottery.calculatePayouts(gameNumber);
+
+        // Calculate expected payouts
+        uint256 totalPrizePool = 500 ether + TICKET_PRICE;
+        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000;
+        uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
+
+        if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
+            expectedFee = lottery.FEE_MAX_IN_ETH();
+        }
+
+        // Verify payout information
+        assertEq(lottery.gamePayouts(gameNumber, 0), 0, "Gold payout should be zero");
+        assertEq(lottery.gamePayouts(gameNumber, 1), 0, "Silver payout should be zero");
+        assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize, "Stored bronze payout incorrect");
+
+        // Verify ticket count
+        assertEq(lottery.playerTicketCount(player1, gameNumber), 1, "Player 1 ticket count incorrect");
+
+        // Claim prize
+        vm.prank(player1);
+        lottery.claimPrize(gameNumber);
+
+        // Assert payout
+        assertEq(player1.balance - initialPlayer1Balance, expectedBronzePrize, "Bronze prize payout incorrect");
+        assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+
+        // Verify game state
+        assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
+        assertTrue(lottery.prizesClaimed(gameNumber, player1), "Prize should be marked as claimed for player1");
+    }
+
+    // 15 winners - 5 jackpot, 5 silver, 5 bronze
+    function testScenarioE() public {
+        vm.pauseGasMetering();
+        fundLottery(5000);
+        uint256 gameNumber = lottery.currentGameNumber();
+
+        address[] memory players = new address[](15);
+        for (uint256 i = 0; i < 15; i++) {
+            players[i] = address(uint160(uint256(keccak256(abi.encodePacked("player", i)))));
+        }
+
+        // Prepare ticket data
+        uint256[4][] memory jackpotTickets = new uint256[4][](1);
+        jackpotTickets[0] = [uint256(1), uint256(2), uint256(3), uint256(4)];
+
+        uint256[4][] memory silverTickets = new uint256[4][](1);
+        silverTickets[0] = [uint256(1), uint256(2), uint256(3), uint256(5)];
+
+        uint256[4][] memory bronzeTickets = new uint256[4][](1);
+        bronzeTickets[0] = [uint256(1), uint256(2), uint256(4), uint256(5)];
+
         // Simulate ticket purchases
-        for (uint256 i = 0; i < 2; i++) {
-            vm.deal(address(uint160(i + 1)), 100000 ether);
-            vm.prank(address(uint160(i + 1)));
-            lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(4)); // Jackpot winning ticket
-        }
-        for (uint256 i = 2; i < 4; i++) {
-            vm.deal(address(uint160(i + 1)), 100000 ether);
-            vm.prank(address(uint160(i + 1)));
-            lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(5)); // Silver winning ticket
-        }
-        for (uint256 i = 4; i < 6; i++) {
-            vm.deal(address(uint160(i + 1)), 100000 ether);
-            vm.prank(address(uint160(i + 1)));
-            lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5)); // Bronze winning ticket
+        for (uint256 i = 0; i < 15; i++) {
+            vm.deal(players[i], 100000 ether);
+            vm.prank(players[i]);
+
+            if (i < 5) {
+                lottery.buyTickets{value: TICKET_PRICE}(jackpotTickets);
+            } else if (i < 10) {
+                lottery.buyTickets{value: TICKET_PRICE}(silverTickets);
+            } else {
+                lottery.buyTickets{value: TICKET_PRICE}(bronzeTickets);
+            }
         }
 
         setupDrawAndVDF();
@@ -589,11 +432,10 @@ contract LotteryPayoutTest is Test {
         lottery.calculatePayouts(gameNumber);
 
         // Calculate expected payouts
-        uint256 totalPrizePool = 5000 ether + (6 * TICKET_PRICE);
-        uint256 expectedGoldPrize = (totalPrizePool * lottery.GOLD_PERCENTAGE()) / 10000 / 2;
-        uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000 / 4;
-        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 6;
-        uint256 expectedLoyaltyPrize = (totalPrizePool * lottery.LOYALTY_PERCENTAGE()) / 10000;
+        uint256 totalPrizePool = 500 ether + (15 * TICKET_PRICE);
+        uint256 expectedGoldPrize = (totalPrizePool * lottery.GOLD_PERCENTAGE()) / 10000 / 5;
+        uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000 / 10;
+        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 15;
         uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
 
         if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
@@ -604,156 +446,268 @@ contract LotteryPayoutTest is Test {
         assertEq(lottery.gamePayouts(gameNumber, 0), expectedGoldPrize, "Stored gold payout incorrect");
         assertEq(lottery.gamePayouts(gameNumber, 1), expectedSilverPrize, "Stored silver payout incorrect");
         assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize, "Stored bronze payout incorrect");
-        assertEq(lottery.gamePayouts(gameNumber, 3), expectedLoyaltyPrize, "Stored loyalty payout incorrect");
 
-        // Claim prizes for all winners
-        // for (uint256 i = 0; i < 15; i++) {
-        //     vm.prank(address(uint160(i + 1)));
-        //     lottery.claimPrize(gameNumber);
-        // }
+        // Claim prizes for all winners and verify balances
+        for (uint256 i = 0; i < 15; i++) {
+            address player = players[i];
+            uint256 initialBalance = player.balance;
+            vm.prank(player);
+            lottery.claimPrize(gameNumber);
+            
+            uint256 expectedPrize;
+            if (i < 5) {
+                expectedPrize = expectedGoldPrize + expectedSilverPrize + expectedBronzePrize;
+            } else if (i < 10) {
+                expectedPrize = expectedSilverPrize + expectedBronzePrize;
+            } else {
+                expectedPrize = expectedBronzePrize;
+            }
+            
+            assertEq(player.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
+        }
 
         // Assert fee transfer
         assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
 
-        // Distribute loyalty prize
-        address[] memory bronzeWinners = new address[](6);
-        for (uint256 i = 0; i < 6; i++) {
-            bronzeWinners[i] = address(uint160(i + 1));
+        // Verify game state
+        assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
+        for (uint256 i = 0; i < 15; i++) {
+            address player = players[i];
+            assertTrue(lottery.prizesClaimed(gameNumber, player), "Prize should be marked as claimed for player");
         }
-        lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
-
-        // Assert loyalty prize distribution (assuming the first player wins the loyalty prize)
-        // assertEq(address(uint160(1)).balance, expectedGoldPrize + expectedSilverPrize + expectedBronzePrize + expectedLoyaltyPrize + TICKET_PRICE, "Loyalty winner payout incorrect");
     }
 
-    // 100 winners - 0 jackpot, 50 silver, 50 bronze, 3 loyalty
-    // function testScenarioF() public {
-    //     fundLottery(5000);
-    //     uint256 gameNumber = lottery.currentGameNumber();
+    // 100 winners - 0 jackpot, 50 silver, 50 bronze
+    function testScenarioF() public {
+        vm.pauseGasMetering();
+        fundLottery(5000);
+        uint256 gameNumber = lottery.currentGameNumber();
 
-    //     // Simulate ticket purchases
-    //     for (uint256 i = 0; i < 50; i++) {
-    //         vm.prank(address(uint160(i + 1)));
-    //         lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(3)], uint256(5)); // Silver winning ticket
-    //     }
-    //     for (uint256 i = 50; i < 100; i++) {
-    //         vm.prank(address(uint160(i + 1)));
-    //         lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5)); // Bronze winning ticket
-    //     }
+        address[] memory players = new address[](100);
+        for (uint256 i = 0; i < 100; i++) {
+            players[i] = address(uint160(uint256(keccak256(abi.encodePacked("player", i)))));
+        }
 
-    //     setupDrawAndVDF();
+        // Prepare ticket data
+        uint256[4][] memory silverTickets = new uint256[4][](1);
+        silverTickets[0] = [uint256(1), uint256(2), uint256(3), uint256(5)];
 
-    //     // Set winning numbers for testing
-    //     uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
-    //     lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
+        uint256[4][] memory bronzeTickets = new uint256[4][](1);
+        bronzeTickets[0] = [uint256(1), uint256(2), uint256(4), uint256(5)];
 
-    //     uint256 initialFeeRecipientBalance = feeRecipient.balance;
+        // Simulate ticket purchases
+        for (uint256 i = 0; i < 100; i++) {
+            vm.deal(players[i], 100000 ether);
+            vm.prank(players[i]);
 
-    //     lottery.calculatePayouts(gameNumber);
+            if (i < 50) {
+                lottery.buyTickets{value: TICKET_PRICE}(silverTickets);
+            } else {
+                lottery.buyTickets{value: TICKET_PRICE}(bronzeTickets);
+            }
+        }
 
-    //     // Calculate expected payouts
-    //     uint256 totalPrizePool = 500 ether + (100 * TICKET_PRICE);
-    //     uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000 / 50;
-    //     uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 50;
-    //     uint256 expectedLoyaltyPrize = (totalPrizePool * lottery.LOYALTY_PERCENTAGE()) / 10000 / 3;
-    //     uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
+        setupDrawAndVDF();
 
-    //     if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
-    //         expectedFee = lottery.FEE_MAX_IN_ETH();
-    //     }
+        // Set winning numbers for testing
+        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
+        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
 
-    //     // Verify payout information
-    //     assertEq(lottery.gamePayouts(gameNumber, 0), 0, "Gold payout should be zero");
-    //     assertEq(lottery.gamePayouts(gameNumber, 1), expectedSilverPrize, "Stored silver payout incorrect");
-    //     assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize, "Stored bronze payout incorrect");
-    //     assertEq(lottery.gamePayouts(gameNumber, 3), expectedLoyaltyPrize * 3, "Stored loyalty payout incorrect");
+        uint256 initialFeeRecipientBalance = feeRecipient.balance;
 
-    //     // Claim prizes for all winners
-    //     for (uint256 i = 0; i < 100; i++) {
-    //         vm.prank(address(uint160(i + 1)));
-    //         lottery.claimPrize(gameNumber);
-    //     }
+        lottery.calculatePayouts(gameNumber);
 
-    //     // Assert fee transfer
-    //     assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+        // Calculate expected payouts
+        uint256 totalPrizePool = 500 ether + (100 * TICKET_PRICE);
+        uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000 / 50;
+        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 100;
+        uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
 
-    //     // Distribute loyalty prize
-    //     address[] memory bronzeWinners = new address[](100);
-    //     for (uint256 i = 0; i < 100; i++) {
-    //         bronzeWinners[i] = address(uint160(i + 1));
-    //     }
-    //     lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
+        if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
+            expectedFee = lottery.FEE_MAX_IN_ETH();
+        }
 
-    //     // Assert loyalty prize distribution (assuming the first 3 players win the loyalty prize)
-    //     for (uint256 i = 0; i < 3; i++) {
-    //         assertEq(address(uint160(i + 1)).balance, expectedSilverPrize + expectedBronzePrize + expectedLoyaltyPrize + TICKET_PRICE, "Loyalty winner payout incorrect");
-    //     }
-    // }
+        // Verify payout information
+        assertEq(lottery.gamePayouts(gameNumber, 0), 0, "Stored gold payout should be zero");
+        assertEq(lottery.gamePayouts(gameNumber, 1), expectedSilverPrize, "Stored silver payout incorrect");
+        assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize, "Stored bronze payout incorrect");
 
-    // 150 winners - 0 jackpot, 0 silver, 150 bronze, 15 loyalty
-    // function testScenarioG() public {
-    //     fundLottery(5000);
-    //     uint256 gameNumber = lottery.currentGameNumber();
+        // Claim prizes for all winners and verify balances
+        for (uint256 i = 0; i < 100; i++) {
+            address player = players[i];
+            uint256 initialBalance = player.balance;
+            vm.prank(player);
+            lottery.claimPrize(gameNumber);
+            
+            uint256 expectedPrize;
+            if (i < 50) {
+                expectedPrize = expectedSilverPrize + expectedBronzePrize;
+            } else {
+                expectedPrize = expectedBronzePrize;
+            }
+            
+            assertEq(player.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
+        }
 
-    //     // Simulate ticket purchases
-    //     for (uint256 i = 0; i < 150; i++) {
-    //         vm.prank(address(uint160(i + 1)));
-    //         lottery.buyTicket{value: TICKET_PRICE}([uint256(1), uint256(2), uint256(4)], uint256(5)); // Bronze winning ticket
-    //     }
+        // Assert fee transfer
+        assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
 
-    //     setupDrawAndVDF();
+        // Verify game state
+        assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
+        for (uint256 i = 0; i < 100; i++) {
+            address player = players[i];
+            assertTrue(lottery.prizesClaimed(gameNumber, player), "Prize should be marked as claimed for player");
+        }
+    }
 
-    //     // Set winning numbers for testing
-    //     uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
-    //     lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
+    // 150 winners - 0 jackpot, 0 silver, 150 bronze
+    function testScenarioG() public {
+        vm.pauseGasMetering();
+        fundLottery(5000);
+        uint256 gameNumber = lottery.currentGameNumber();
 
-    //     uint256 initialFeeRecipientBalance = feeRecipient.balance;
+        address[] memory players = new address[](150);
+        for (uint256 i = 0; i < 150; i++) {
+            players[i] = address(uint160(uint256(keccak256(abi.encodePacked("player", i)))));
+        }
 
-    //     lottery.calculatePayouts(gameNumber);
+        // Prepare ticket data
+        uint256[4][] memory bronzeTickets = new uint256[4][](1);
+        bronzeTickets[0] = [uint256(1), uint256(2), uint256(4), uint256(5)];
 
-    //     // Calculate expected payouts
-    //     uint256 totalPrizePool = 500 ether + (150 * TICKET_PRICE);
-    //     uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 150;
-    //     uint256 expectedLoyaltyPrize = (totalPrizePool * lottery.LOYALTY_PERCENTAGE()) / 10000 / 15;
-    //     uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
+        // Simulate ticket purchases
+        for (uint256 i = 0; i < 150; i++) {
+            vm.deal(players[i], 100000 ether);
+            vm.prank(players[i]);
+            lottery.buyTickets{value: TICKET_PRICE}(bronzeTickets);
+        }
 
-    //     if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
-    //         expectedFee = lottery.FEE_MAX_IN_ETH();
-    //     }
+        setupDrawAndVDF();
 
-    //     // Verify payout information
-    //     assertEq(lottery.gamePayouts(gameNumber, 0), 0, "Gold payout should be zero");
-    //     assertEq(lottery.gamePayouts(gameNumber, 1), 0, "Silver payout should be zero");
-    //     assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize, "Stored bronze payout incorrect");
-    //     assertEq(lottery.gamePayouts(gameNumber, 3), expectedLoyaltyPrize * 15, "Stored loyalty payout incorrect");
+        // Set winning numbers for testing
+        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
+        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
 
-    //     // Claim prizes for all winners
-    //     for (uint256 i = 0; i < 150; i++) {
-    //         vm.prank(address(uint160(i + 1)));
-    //         lottery.claimPrize(gameNumber);
-    //     }
+        uint256 initialFeeRecipientBalance = feeRecipient.balance;
 
-    //     // Assert fee transfer
-    //     assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+        lottery.calculatePayouts(gameNumber);
 
-    //     // Distribute loyalty prize
-    //     address[] memory bronzeWinners = new address[](150);
-    //     for (uint256 i = 0; i < 150; i++) {
-    //         bronzeWinners[i] = address(uint160(i + 1));
-    //     }
-    //     lottery.distributeLoyaltyPrize(gameNumber, bronzeWinners);
+        // Calculate expected payouts
+        uint256 totalPrizePool = 500 ether + (150 * TICKET_PRICE);
+        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 150;
+        uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
 
-    //     // Assert loyalty prize distribution (assuming the first 15 players win the loyalty prize)
-    //     for (uint256 i = 0; i < 15; i++) {
-    //         assertEq(address(uint160(i + 1)).balance, expectedBronzePrize + expectedLoyaltyPrize + TICKET_PRICE, "Loyalty winner payout incorrect");
-    //     }
+        if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
+            expectedFee = lottery.FEE_MAX_IN_ETH();
+        }
 
-    //     // Assert non-loyalty winners only received bronze prize
-    //     for (uint256 i = 15; i < 150; i++) {
-    //         assertEq(address(uint160(i + 1)).balance, expectedBronzePrize + TICKET_PRICE, "Non-loyalty winner payout incorrect");
-    //     }
+        // Verify payout information
+        assertEq(lottery.gamePayouts(gameNumber, 0), 0, "Stored gold payout should be zero");
+        assertEq(lottery.gamePayouts(gameNumber, 1), 0, "Stored silver payout should be zero");
+        assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize, "Stored bronze payout incorrect");
 
-    //     // Verify that the game is marked as completed and no jackpot was won
-    //     assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
-    // }
+        // Claim prizes for all winners and verify balances
+        for (uint256 i = 0; i < 150; i++) {
+            address player = players[i];
+            uint256 initialBalance = player.balance;
+            vm.prank(player);
+            lottery.claimPrize(gameNumber);
+            
+            assertEq(player.balance - initialBalance, expectedBronzePrize, "Prize payout incorrect for player");
+        }
+
+        // Assert fee transfer
+        assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+
+        // Verify game state
+        assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
+        for (uint256 i = 0; i < 150; i++) {
+            address player = players[i];
+            assertTrue(lottery.prizesClaimed(gameNumber, player), "Prize should be marked as claimed for player");
+        }
+    }
+
+    // 100 winners - 1 jackpot, 0 silver, 99 bronze
+    function testScenarioH() public {
+        vm.pauseGasMetering();
+        fundLottery(5000);
+        uint256 gameNumber = lottery.currentGameNumber();
+
+        address[] memory players = new address[](100);
+        for (uint256 i = 0; i < 100; i++) {
+            players[i] = address(uint160(uint256(keccak256(abi.encodePacked("player", i)))));
+        }
+
+        // Prepare ticket data
+        uint256[4][] memory jackpotTicket = new uint256[4][](1);
+        jackpotTicket[0] = [uint256(1), uint256(2), uint256(3), uint256(4)];
+
+        uint256[4][] memory bronzeTickets = new uint256[4][](1);
+        bronzeTickets[0] = [uint256(1), uint256(2), uint256(4), uint256(5)];
+
+        // Simulate ticket purchases
+        for (uint256 i = 0; i < 100; i++) {
+            vm.deal(players[i], 100000 ether);
+            vm.prank(players[i]);
+
+            if (i == 0) {
+                lottery.buyTickets{value: TICKET_PRICE}(jackpotTicket);
+            } else {
+                lottery.buyTickets{value: TICKET_PRICE}(bronzeTickets);
+            }
+        }
+
+        setupDrawAndVDF();
+
+        // Set winning numbers for testing
+        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
+        lottery.setWinningNumbersForTesting(gameNumber, winningNumbers);
+
+        uint256 initialFeeRecipientBalance = feeRecipient.balance;
+
+        lottery.calculatePayouts(gameNumber);
+
+        // Calculate expected payouts
+        uint256 totalPrizePool = 500 ether + (100 * TICKET_PRICE);
+        uint256 expectedGoldPrize = (totalPrizePool * lottery.GOLD_PERCENTAGE()) / 10000;
+        uint256 expectedSilverPrize = (totalPrizePool * lottery.SILVER_PLACE_PERCENTAGE()) / 10000;
+        uint256 expectedBronzePrize = (totalPrizePool * lottery.BRONZE_PLACE_PERCENTAGE()) / 10000 / 100;
+        uint256 expectedFee = (totalPrizePool * lottery.FEE_PERCENTAGE()) / 10000;
+
+        if (expectedFee > lottery.FEE_MAX_IN_ETH()) {
+            expectedFee = lottery.FEE_MAX_IN_ETH();
+        }
+
+        // Verify payout information
+        assertEq(lottery.gamePayouts(gameNumber, 0), expectedGoldPrize, "Stored gold payout incorrect");
+        assertEq(lottery.gamePayouts(gameNumber, 1), expectedSilverPrize, "Stored silver payout incorrect");
+        assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePrize, "Stored bronze payout incorrect");
+
+        // Claim prizes for all winners and verify balances
+        for (uint256 i = 0; i < 100; i++) {
+            address player = players[i];
+            uint256 initialBalance = player.balance;
+            vm.prank(player);
+            lottery.claimPrize(gameNumber);
+            
+            uint256 expectedPrize;
+            if (i == 0) {
+                expectedPrize = expectedGoldPrize + expectedSilverPrize + expectedBronzePrize;
+            } else {
+                expectedPrize = expectedBronzePrize;
+            }
+            
+            assertEq(player.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
+        }
+
+        // Assert fee transfer
+        assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+
+        // Verify game state
+        assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
+        for (uint256 i = 0; i < 100; i++) {
+            address player = players[i];
+            assertTrue(lottery.prizesClaimed(gameNumber, player), "Prize should be marked as claimed for player");
+        }
+    }
 }
