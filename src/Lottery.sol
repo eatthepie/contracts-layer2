@@ -192,13 +192,14 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(targetSetBlock > block.number, "Invalid target block");
         gameRandomBlock[currentGameNumber] = targetSetBlock;
 
+        // current game difficulty
+        Difficulty currentDifficulty = gameDifficulty[currentGameNumber];
+
         // Begin next game
         ++currentGameNumber;
         gameStartBlock[currentGameNumber] = block.number;
-        
-        // check for changes to next game (difficulty, price, vdf contract)
-        Difficulty currentDifficulty = gameDifficulty[currentGameNumber];
 
+        // check for changes to next game (difficulty, price, vdf contract)
         if (newDifficulty != currentDifficulty && newDifficultyGame == currentGameNumber) {
             gameDifficulty[currentGameNumber] = newDifficulty;
         } else {
@@ -370,7 +371,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(prizesClaimed[gameNumber][msg.sender] != true, "Prize already claimed");
         require(currentGameNumber <= gameNumber + CLAIM_PERIOD_GAMES, "Claim period has ended");
 
-        uint256[4] memory payouts = gamePayouts[gameNumber];
+        uint256[3] memory payouts = gamePayouts[gameNumber];
         uint256 totalPrize = 0;
 
         bytes32 goldTicketHash = computeGoldTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1], gameWinningNumbers[gameNumber][2], gameWinningNumbers[gameNumber][3]);
@@ -404,7 +405,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(gameDrawCompleted[gameNumber] == true, "Game draw not completed yet");
         require(!hasClaimedNFT[gameNumber][msg.sender], "NFT already claimed for this game");
 
-        uint256[4] memory payouts = gamePayouts[gameNumber];
+        uint256[3] memory payouts = gamePayouts[gameNumber];
 
         uint256 tokenId = uint256(keccak256(abi.encodePacked(gameNumber, msg.sender)));
         nftPrize.mintNFT(msg.sender, tokenId, gameNumber, gameWinningNumbers[gameNumber], payouts[0]);
