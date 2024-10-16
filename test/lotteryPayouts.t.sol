@@ -162,6 +162,12 @@ contract LotteryPayoutTest is Test {
         );
     }
 
+    // TODO: implement this
+    // test if next few games are being played, delayed VDF submission
+    function testDelayedPayouts() public {
+
+    }
+
     /* Scenario Testing */
 
     // no winners
