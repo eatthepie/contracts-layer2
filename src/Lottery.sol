@@ -712,15 +712,15 @@ contract Lottery is Ownable, ReentrancyGuard {
 
         uint256 gameCount = endGameId - startGameId + 1;
         gameInfos = new GameBasicInfo[](gameCount);
-        
+
         for (uint256 i = 0; i < gameCount; i++) {
             uint256 gameId = startGameId + i;
             GameStatus status = gameDrawCompleted[gameId] ? GameStatus.Completed :
                                 (gameDrawInitiated[gameId] ? GameStatus.Drawing : GameStatus.InPlay);
-            
+
             (uint256 goldWinners, uint256 silverWinners, uint256 bronzeWinners) = _getWinnerCounts(gameId);
             uint256 totalWinners = goldWinners + silverWinners + bronzeWinners;
-            
+
             gameInfos[i] = GameBasicInfo({
                 gameId: gameId,
                 status: status,
