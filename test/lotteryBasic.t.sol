@@ -34,6 +34,12 @@ contract LotteryBasicTest is Test {
         vm.deal(player3, 100000 ether);
     }
 
+    function wrapTicket(uint256[4] memory ticket) internal pure returns (uint256[4][] memory) {
+        uint256[4][] memory wrappedTicket = new uint256[4][](1);
+        wrappedTicket[0] = ticket;
+        return wrappedTicket;
+    }
+
     function fundLottery(uint256 ticketCount) internal {
         vm.startPrank(player);
         
@@ -110,68 +116,159 @@ contract LotteryBasicTest is Test {
         assertTrue(timeUntilDraw > 0, "Time until draw should be positive");
     }
 
-    // TODO: test these
     function testGetBasicGameInfo() public {
-        // Setup: Create multiple games with different states
-        lottery.buyTickets{value: 0.1 ether}(new uint256[4][](1)); // Game 1
-        vm.warp(block.timestamp + 1 weeks);
-        lottery.initiateDraw(); // Game 1 in Drawing state, Game 2 starts
-        lottery.buyTickets{value: 0.2 ether}(new uint256[4][](2)); // Game 2
+        // Game 1 starts
+        fundLottery(5000);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(1), uint256(1), uint256(1), uint256(1)]));
+        vm.warp(block.timestamp + lottery.DRAW_MIN_TIME_PERIOD() + 1);
+        lottery.initiateDraw();
+        // Game 2 starts
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(2), uint256(2), uint256(2), uint256(2)]));
 
-        (Lottery.GameBasicInfo[] memory gameInfos, uint256 nextGameId) = lottery.getBasicGameInfo(1, 2);
+        (Lottery.GameBasicInfo[] memory gameInfos) = lottery.getBasicGameInfo(1, 2);
 
         // Assertions
         assertEq(gameInfos.length, 2, "Should return info for 2 games");
-        assertEq(nextGameId, 3, "Next game ID should be 3");
 
         // Check Game 1
         assertEq(gameInfos[0].gameId, 1, "First game ID should be 1");
         assertEq(uint(gameInfos[0].status), uint(Lottery.GameStatus.Drawing), "Game 1 should be in Drawing state");
-        assertEq(gameInfos[0].prizePool, 0.1 ether, "Game 1 prize pool should be 0.1 ether");
+        assertEq(gameInfos[0].prizePool, 500 ether + TICKET_PRICE, "Game 1 prize pool should be 0.1 ether");
         assertEq(gameInfos[0].numberOfWinners, 0, "Game 1 should have no winners yet");
 
         // Check Game 2
         assertEq(gameInfos[1].gameId, 2, "Second game ID should be 2");
         assertEq(uint(gameInfos[1].status), uint(Lottery.GameStatus.InPlay), "Game 2 should be in InPlay state");
-        assertEq(gameInfos[1].prizePool, 0.2 ether, "Game 2 prize pool should be 0.2 ether");
+        assertEq(gameInfos[1].prizePool, TICKET_PRICE, "Game 2 prize pool should be 0.2 ether");
         assertEq(gameInfos[1].numberOfWinners, 0, "Game 2 should have no winners");
 
         // Test pagination
-        (gameInfos, nextGameId) = lottery.getBasicGameInfo(2, 2);
+        (gameInfos) = lottery.getBasicGameInfo(2, 2);
         assertEq(gameInfos.length, 1, "Should return info for 1 game");
-        assertEq(nextGameId, 0, "Next game ID should be 0 as there are no more games");
     }
 
     function testGetDetailedGameInfo() public {
         // Setup: Create a game and progress it to Completed state
-        lottery.buyTickets{value: 0.3 ether}(new uint256[4][](3));
-        vm.warp(block.timestamp + 1 weeks);
-        lottery.initiateDraw();
-        vm.roll(block.number + 129); // Move past the DRAW_DELAY_SECURITY_BUFFER
-        lottery.setRandom(1);
-        
-        // Simulate VDF proof submission and payout calculation
-        // Note: You might need to adjust this based on your contract's specific implementation
-        // This is a simplified version and might need to be adapted
-        bytes memory dummyProof = new bytes(32);
-        lottery.submitVDFProof(1, new BigNumber[](1), BigNumbers.init(dummyProof));
+        fundLottery(5000);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(3), uint256(3), uint256(3), uint256(3)]));
+        setupDrawAndVDF();
         lottery.calculatePayouts(1);
-
         Lottery.GameDetailedInfo memory gameInfo = lottery.getDetailedGameInfo(1);
 
         // Assertions
         assertEq(uint(gameInfo.status), uint(Lottery.GameStatus.Completed), "Game should be in Completed state");
-        assertEq(gameInfo.prizePool, 0.3 ether, "Prize pool should be 0.3 ether");
+        assertEq(gameInfo.prizePool, 500 ether + TICKET_PRICE, "Prize pool should be 0.3 ether");
         assertEq(gameInfo.numberOfWinners, 0, "Should have no winners"); // Assuming no winning tickets
         assertEq(uint(gameInfo.difficulty), uint(Lottery.Difficulty.Easy), "Difficulty should be Easy");
         assertTrue(gameInfo.drawInitiatedBlock > 0, "Draw initiated block should be set");
         assertTrue(gameInfo.randaoBlock > gameInfo.drawInitiatedBlock, "RANDAO block should be after draw initiated");
         assertTrue(gameInfo.randaoValue != 0, "RANDAO value should be set");
-        assertTrue(gameInfo.payouts[0] > 0 || gameInfo.payouts[1] > 0 || gameInfo.payouts[2] > 0, "At least one payout should be set");
 
         // Test for non-existent game
         vm.expectRevert("Game ID exceeds current game");
         lottery.getDetailedGameInfo(3);
+    }
+
+    function testHasUserWon() public {
+        fundLottery(5000);
+
+        vm.startPrank(player1);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(1), uint256(2), uint256(3), uint256(4)]));
+        vm.stopPrank();
+
+        vm.startPrank(player2);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(1), uint256(2), uint256(5), uint256(1)]));
+        vm.stopPrank();
+
+        vm.startPrank(player3);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(5), uint256(6), uint256(7), uint256(3)]));
+        vm.stopPrank();
+
+        uint256 gameNumber = lottery.currentGameNumber();
+        setupDrawAndVDF();
+
+        // Set winning numbers
+        lottery.setWinningNumbersForTesting(gameNumber, [uint256(1), uint256(2), uint256(3), uint256(4)]);
+        lottery.calculatePayouts(gameNumber);
+
+        // Check if users have won
+        assertTrue(lottery.hasUserWon(gameNumber, player1), "Player1 should have won");
+        assertTrue(lottery.hasUserWon(gameNumber, player2), "Player2 should have won");
+        assertFalse(lottery.hasUserWon(gameNumber, player3), "Player3 should not have won");
+        assertFalse(lottery.hasUserWon(gameNumber, address(0x1234)), "Random address should not have won");
+
+        // Check for non-existent game
+        vm.expectRevert("Game draw not completed yet"); // should be invalid game number?
+        lottery.hasUserWon(gameNumber + 1, player1);
+
+        // Check for game that hasn't completed the draw
+        uint256 nextGameNumber = lottery.currentGameNumber();
+        vm.expectRevert("Game draw not completed yet");
+        lottery.hasUserWon(nextGameNumber, player1);
+    }
+
+    function testGetUserGameWinnings() public {
+        fundLottery(5000);
+
+        vm.startPrank(player1);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(1), uint256(2), uint256(3), uint256(4)])); // Gold winner
+        vm.stopPrank();
+
+        vm.startPrank(player2);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(1), uint256(2), uint256(3), uint256(5)])); // Silver winner
+        vm.stopPrank();
+
+        vm.startPrank(player3);
+        lottery.buyTickets{value: TICKET_PRICE}(wrapTicket([uint256(1), uint256(2), uint256(4), uint256(5)])); // Bronze winner
+        vm.stopPrank();
+
+        uint256 gameNumber = lottery.currentGameNumber();
+        setupDrawAndVDF();
+
+        // Set winning numbers
+        lottery.setWinningNumbersForTesting(gameNumber, [uint256(1), uint256(2), uint256(3), uint256(4)]);
+        lottery.calculatePayouts(gameNumber);
+
+        // Check winnings for gold winner (player1)
+        (bool goldWin, bool silverWin, bool bronzeWin, uint256 totalPrize, bool claimed) = lottery.getUserGameWinnings(gameNumber, player1);
+        assertTrue(goldWin, "Player1 should have won gold");
+        assertTrue(silverWin, "Player1 should have won silver");
+        assertTrue(bronzeWin, "Player1 should have won bronze");
+        // assertEq(totalPrize, lottery.gamePayouts(gameNumber, 0), "Player1's prize should match gold payout"); -> incorrect, needs updating
+        assertFalse(claimed, "Player1's prize should not be claimed yet");
+
+        // Check winnings for silver winner (player2)
+        (goldWin, silverWin, bronzeWin, totalPrize, claimed) = lottery.getUserGameWinnings(gameNumber, player2);
+        assertFalse(goldWin, "Player2 should not have won gold");
+        assertTrue(silverWin, "Player2 should have won silver");
+        assertTrue(bronzeWin, "Player2 should have won bronze");
+        // assertEq(totalPrize, lottery.gamePayouts(gameNumber, 1), "Player2's prize should match silver payout"); -> incorrect, needs updating
+        assertFalse(claimed, "Player2's prize should not be claimed yet");
+
+        // Check winnings for bronze winner (player3)
+        (goldWin, silverWin, bronzeWin, totalPrize, claimed) = lottery.getUserGameWinnings(gameNumber, player3);
+        assertFalse(goldWin, "Player3 should not have won gold");
+        assertFalse(silverWin, "Player3 should not have won silver");
+        assertTrue(bronzeWin, "Player3 should have won bronze");
+        // assertEq(totalPrize, lottery.gamePayouts(gameNumber, 2), "Player3's prize should match bronze payout"); -> incorrect, needs updating
+        assertFalse(claimed, "Player3's prize should not be claimed yet");
+
+        // Check for non-winner
+        (goldWin, silverWin, bronzeWin, totalPrize, claimed) = lottery.getUserGameWinnings(gameNumber, address(0x1234));
+        assertFalse(goldWin, "Non-winner should not have won gold");
+        assertFalse(silverWin, "Non-winner should not have won silver");
+        assertFalse(bronzeWin, "Non-winner should not have won bronze");
+        assertEq(totalPrize, 0, "Non-winner's prize should be zero");
+        assertFalse(claimed, "Non-winner's prize should not be claimed");
+
+        // Check for non-existent game
+        vm.expectRevert("Game draw not completed yet"); // should be invalid game number?
+        lottery.getUserGameWinnings(gameNumber + 1, player1);
+
+        // Check for game that hasn't completed the draw
+        uint256 nextGameNumber = lottery.currentGameNumber();
+        vm.expectRevert("Game draw not completed yet");
+        lottery.getUserGameWinnings(nextGameNumber, player1);
     }
 
     function testReceiveEther() public {

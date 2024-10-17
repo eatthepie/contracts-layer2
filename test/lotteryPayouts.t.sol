@@ -1,3 +1,4 @@
+// TODO: test delayed VDF submissions + refactor tests
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.25;
 
@@ -38,6 +39,14 @@ contract LotteryPayoutTest is Test {
         return wrappedTicket;
     }
 
+    function generateTickets(uint256 count, uint256 n1, uint256 n2, uint256 n3, uint256 n4) internal pure returns (uint256[4][] memory) {
+        uint256[4][] memory tickets = new uint256[4][](count);
+        for (uint256 i = 0; i < count; i++) {
+            tickets[i] = [n1, n2, n3, n4];
+        }
+        return tickets;
+    }
+
     function fundLottery(uint256 ticketCount) internal {
         vm.startPrank(player);
         
@@ -57,6 +66,17 @@ contract LotteryPayoutTest is Test {
         }
         
         vm.stopPrank();
+    }
+
+    function verifyGamePayouts(uint256 gameNumber, uint256 goldWinners, uint256 silverWinners, uint256 bronzeWinners) internal {
+        uint256 prizePool = lottery.gamePrizePool(gameNumber);
+        uint256 expectedGoldPayout = (prizePool * lottery.GOLD_PERCENTAGE() / 10000) / goldWinners;
+        uint256 expectedSilverPayout = (prizePool * lottery.SILVER_PLACE_PERCENTAGE() / 10000) / (silverWinners > 0 ? silverWinners : 1);
+        uint256 expectedBronzePayout = (prizePool * lottery.BRONZE_PLACE_PERCENTAGE() / 10000) / (bronzeWinners > 0 ? bronzeWinners : 1);
+
+        assertEq(lottery.gamePayouts(gameNumber, 0), expectedGoldPayout, "Gold payout should be correct");
+        assertEq(lottery.gamePayouts(gameNumber, 1), expectedSilverPayout, "Silver payout should be correct");
+        assertEq(lottery.gamePayouts(gameNumber, 2), expectedBronzePayout, "Bronze payout should be correct");
     }
 
     function setupDrawAndVDF() internal returns (uint256) {
@@ -82,6 +102,16 @@ contract LotteryPayoutTest is Test {
         lottery.submitVDFProof(gameNumber, v, y);
 
         return gameNumber;
+    }
+
+    function setupDrawWithoutVDF() internal returns (uint256) {
+        vm.warp(block.timestamp + lottery.DRAW_MIN_TIME_PERIOD() + 1);
+        lottery.initiateDraw();
+        uint256 gameNumber = lottery.currentGameNumber() - 1;
+        uint256 targetBlock = lottery.gameRandomBlock(gameNumber);
+        vm.roll(targetBlock);
+        vm.prevrandao(bytes32(uint256(51049764388387882260001832746320922162275278963975484447753639501411130604681))); // make prevrandao non-zero
+        lottery.setRandom(gameNumber);
     }
 
     // incorrect payouts
@@ -162,16 +192,177 @@ contract LotteryPayoutTest is Test {
         );
     }
 
-    // TODO: implement this
+    // TODO: test delayed VDF submissions
     // test if next few games are being played, delayed VDF submission
     function testDelayedPayouts() public {
+        // play game without vdf submitted
+        fundLottery(5000);
+        uint256 game1 = lottery.currentGameNumber();
+        setupDrawWithoutVDF();
 
+        // play next game
+        fundLottery(5000);
+        uint256 game2 = lottery.currentGameNumber();
+        setupDrawAndVDF();
+        lottery.calculatePayouts(game2);
+        uint256 prizePoolGame2 = lottery.gamePrizePool(game2);
+
+        // play next game
+        fundLottery(5000);
+        uint256 game3 = lottery.currentGameNumber();
+        setupDrawAndVDF();
+        lottery.calculatePayouts(game3);
+        uint256 prizePoolGame3 = lottery.gamePrizePool(game3);
+
+        // submit vdf proof for game1
+        vm.mockCall(
+            address(vdf),
+            abi.encodeWithSelector(VDFPietrzak.verifyPietrzak.selector),
+            abi.encode(true)
+        );
+
+        BigNumber[] memory v = new BigNumber[](1);
+        v[0] = BigNumbers.init(hex"1234");
+        BigNumber memory y = BigNumbers.init(hex"5678");
+
+        lottery.submitVDFProof(game1, v, y);
+
+        // Set winning numbers for game 1 (assuming no winners for simplicity)
+        uint256[4] memory winningNumbers = [uint256(1), uint256(2), uint256(3), uint256(4)];
+        lottery.setWinningNumbersForTesting(game1, winningNumbers);
+
+        // Calculate payouts for game 1
+        lottery.calculatePayouts(game1);
+        uint256 prizePoolGame1 = lottery.gamePrizePool(game1);
+
+        // Verify payouts for game 1
+        uint256 goldPayout = lottery.gamePayouts(game1, 0);
+        uint256 silverPayout = lottery.gamePayouts(game1, 1);
+        uint256 bronzePayout = lottery.gamePayouts(game1, 2);
+
+        assertEq(goldPayout, 0, "Gold prize for game 1 should be zero");
+        assertEq(silverPayout, 0, "Silver prize for game 1 should be zero");
+        assertEq(bronzePayout, 0, "Bronze prize for game 1 should be zero");
+
+        // Check that the prize pool from game 1 is correctly transferred
+        uint256 expectedFee = (prizePoolGame1 * lottery.FEE_PERCENTAGE()) / 10000;
+        uint256 expectedTransferredPrizePool = prizePoolGame1 - expectedFee;
+
+        // The transferred prize pool should be added to game 4's prize pool
+        uint256 game4PrizePool = lottery.gamePrizePool(game3 + 1); // game3 + 1 is game4
+        assertEq(game4PrizePool, expectedTransferredPrizePool, "Prize pool from game 1 should be transferred to game 4");
+
+        // Verify that game 2 and 3 prize pools remain unchanged
+        assertEq(lottery.gamePrizePool(game2), prizePoolGame2, "Game 2 prize pool should remain unchanged");
+        assertEq(lottery.gamePrizePool(game3), prizePoolGame3, "Game 3 prize pool should remain unchanged");
+
+        // Verify that the fee was paid for game 1
+        uint256 feeReceived = feeRecipient.balance;
+        assertEq(feeReceived, expectedFee, "Fee should be paid for game 1");
+    }
+
+    function testDelayedPayoutsWithWinners() public {
+        // Play game 1 without VDF submitted
+        vm.startPrank(player1);
+        lottery.buyTickets{value: TICKET_PRICE * 10}(generateTickets(10, 1, 2, 3, 4)); // Winning tickets
+        vm.stopPrank();
+
+        vm.startPrank(player2);
+        lottery.buyTickets{value: TICKET_PRICE * 4990}(generateTickets(4990, 10, 20, 30, 40)); // Non-winning tickets
+        vm.stopPrank();
+
+        uint256 game1 = lottery.currentGameNumber();
+        setupDrawWithoutVDF();
+        uint256 prizePoolGame1 = lottery.gamePrizePool(game1);
+
+        // Play game 2 with winners
+        vm.startPrank(player2);
+        lottery.buyTickets{value: TICKET_PRICE * 5}(generateTickets(5, 5, 6, 7, 8)); // Winning tickets
+        lottery.buyTickets{value: TICKET_PRICE * 4995}(generateTickets(4995, 10, 20, 30, 40)); // Non-winning tickets
+        vm.stopPrank();
+
+        uint256 game2 = lottery.currentGameNumber();
+        setupDrawAndVDF();
+        lottery.setWinningNumbersForTesting(game2, [uint256(5), uint256(6), uint256(7), uint256(8)]);
+        lottery.calculatePayouts(game2);
+        uint256 prizePoolGame2 = lottery.gamePrizePool(game2);
+
+        // Play game 3 with winners
+        vm.startPrank(player3);
+        lottery.buyTickets{value: TICKET_PRICE * 3}(generateTickets(3, 9, 10, 11, 12)); // Winning tickets
+        lottery.buyTickets{value: TICKET_PRICE * 4997}(generateTickets(4997, 20, 30, 40, 50)); // Non-winning tickets
+        vm.stopPrank();
+
+        uint256 game3 = lottery.currentGameNumber();
+        setupDrawAndVDF();
+        lottery.setWinningNumbersForTesting(game3, [uint256(9), uint256(10), uint256(11), uint256(12)]);
+        lottery.calculatePayouts(game3);
+        uint256 prizePoolGame3 = lottery.gamePrizePool(game3);
+
+        // Submit VDF proof for game 1
+        vm.mockCall(
+            address(vdf),
+            abi.encodeWithSelector(VDFPietrzak.verifyPietrzak.selector),
+            abi.encode(true)
+        );
+
+        BigNumber[] memory v = new BigNumber[](1);
+        v[0] = BigNumbers.init(hex"1234");
+        BigNumber memory y = BigNumbers.init(hex"5678");
+
+        lottery.submitVDFProof(game1, v, y);
+
+        // Set winning numbers for game 1
+        lottery.setWinningNumbersForTesting(game1, [uint256(1), uint256(2), uint256(3), uint256(4)]);
+
+        // Calculate payouts for game 1
+        lottery.calculatePayouts(game1);
+
+        // Verify payouts for all games
+        verifyGamePayouts(game1, 10, 0, 0);
+        verifyGamePayouts(game2, 5, 0, 0);
+        verifyGamePayouts(game3, 3, 0, 0);
+
+        // Claim prizes for all games
+        uint256 initialBalancePlayer1 = player1.balance;
+        uint256 initialBalancePlayer2 = player2.balance;
+        uint256 initialBalancePlayer3 = player3.balance;
+
+        vm.prank(player1);
+        lottery.claimPrize(game1);
+
+        vm.prank(player2);
+        lottery.claimPrize(game2);
+
+        vm.prank(player3);
+        lottery.claimPrize(game3);
+
+        // Verify balances after claiming
+        uint256 player1Prize = player1.balance - initialBalancePlayer1;
+        uint256 player2Prize = player2.balance - initialBalancePlayer2;
+        uint256 player3Prize = player3.balance - initialBalancePlayer3;
+
+        assertEq(player1Prize, lottery.gamePayouts(game1, 0) * 10, "Player 1 should receive correct prize");
+        assertEq(player2Prize, lottery.gamePayouts(game2, 0) * 5, "Player 2 should receive correct prize");
+        assertEq(player3Prize, lottery.gamePayouts(game3, 0) * 3, "Player 3 should receive correct prize");
+
+        // Verify that prize pools for all games are now empty
+        assertEq(lottery.gamePrizePool(game1), 0, "Game 1 prize pool should be empty after claims");
+        assertEq(lottery.gamePrizePool(game2), 0, "Game 2 prize pool should be empty after claims");
+        assertEq(lottery.gamePrizePool(game3), 0, "Game 3 prize pool should be empty after claims");
+
+        // Verify that the fee was paid for all games
+        uint256 totalFee = (prizePoolGame1 + prizePoolGame2 + prizePoolGame3) * lottery.FEE_PERCENTAGE() / 10000;
+        assertEq(feeRecipient.balance, totalFee, "Total fee should be correct for all games");
+
+        // Verify that no excess prize pool was transferred to the next game
+        uint256 game4PrizePool = lottery.gamePrizePool(game3 + 1);
+        assertEq(game4PrizePool, 0, "No excess prize pool should be transferred to game 4");
     }
 
     /* Scenario Testing */
 
     // no winners
-    // prize pool - 500ETH
     function testScenarioA() public {
         fundLottery(5000);
         uint256 gameNumber = lottery.currentGameNumber();
@@ -198,7 +389,6 @@ contract LotteryPayoutTest is Test {
     }
 
     // 3 winners - 1 jackpot, 1 silver, 1 bronze
-    // prize pool: 500.3ETH
     function testScenarioB() public {
         fundLottery(5000);
         uint256 gameNumber = lottery.currentGameNumber();
@@ -455,9 +645,9 @@ contract LotteryPayoutTest is Test {
 
         // Claim prizes for all winners and verify balances
         for (uint256 i = 0; i < 15; i++) {
-            address player = players[i];
-            uint256 initialBalance = player.balance;
-            vm.prank(player);
+            address prizePlayer = players[i];
+            uint256 initialBalance = prizePlayer.balance;
+            vm.prank(prizePlayer);
             lottery.claimPrize(gameNumber);
             
             uint256 expectedPrize;
@@ -469,7 +659,7 @@ contract LotteryPayoutTest is Test {
                 expectedPrize = expectedBronzePrize;
             }
             
-            assertEq(player.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
+            assertEq(prizePlayer.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
         }
 
         // Assert fee transfer
@@ -478,8 +668,8 @@ contract LotteryPayoutTest is Test {
         // Verify game state
         assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
         for (uint256 i = 0; i < 15; i++) {
-            address player = players[i];
-            assertTrue(lottery.prizesClaimed(gameNumber, player), "Prize should be marked as claimed for player");
+            address prizePlayer = players[i];
+            assertTrue(lottery.prizesClaimed(gameNumber, prizePlayer), "Prize should be marked as claimed for player");
         }
     }
 
@@ -540,9 +730,9 @@ contract LotteryPayoutTest is Test {
 
         // Claim prizes for all winners and verify balances
         for (uint256 i = 0; i < 100; i++) {
-            address player = players[i];
-            uint256 initialBalance = player.balance;
-            vm.prank(player);
+            address prizePlayer = players[i];
+            uint256 initialBalance = prizePlayer.balance;
+            vm.prank(prizePlayer);
             lottery.claimPrize(gameNumber);
             
             uint256 expectedPrize;
@@ -552,7 +742,7 @@ contract LotteryPayoutTest is Test {
                 expectedPrize = expectedBronzePrize;
             }
             
-            assertEq(player.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
+            assertEq(prizePlayer.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
         }
 
         // Assert fee transfer
@@ -561,8 +751,8 @@ contract LotteryPayoutTest is Test {
         // Verify game state
         assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
         for (uint256 i = 0; i < 100; i++) {
-            address player = players[i];
-            assertTrue(lottery.prizesClaimed(gameNumber, player), "Prize should be marked as claimed for player");
+            address prizePlayer = players[i];
+            assertTrue(lottery.prizesClaimed(gameNumber, prizePlayer), "Prize should be marked as claimed for player");
         }
     }
 
@@ -614,12 +804,12 @@ contract LotteryPayoutTest is Test {
 
         // Claim prizes for all winners and verify balances
         for (uint256 i = 0; i < 150; i++) {
-            address player = players[i];
-            uint256 initialBalance = player.balance;
-            vm.prank(player);
+            address prizePlayer = players[i];
+            uint256 initialBalance = prizePlayer.balance;
+            vm.prank(prizePlayer);
             lottery.claimPrize(gameNumber);
             
-            assertEq(player.balance - initialBalance, expectedBronzePrize, "Prize payout incorrect for player");
+            assertEq(prizePlayer.balance - initialBalance, expectedBronzePrize, "Prize payout incorrect for player");
         }
 
         // Assert fee transfer
@@ -628,8 +818,8 @@ contract LotteryPayoutTest is Test {
         // Verify game state
         assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
         for (uint256 i = 0; i < 150; i++) {
-            address player = players[i];
-            assertTrue(lottery.prizesClaimed(gameNumber, player), "Prize should be marked as claimed for player");
+            address prizePlayer = players[i];
+            assertTrue(lottery.prizesClaimed(gameNumber, prizePlayer), "Prize should be marked as claimed for player");
         }
     }
 
@@ -691,9 +881,9 @@ contract LotteryPayoutTest is Test {
 
         // Claim prizes for all winners and verify balances
         for (uint256 i = 0; i < 100; i++) {
-            address player = players[i];
-            uint256 initialBalance = player.balance;
-            vm.prank(player);
+            address prizePlayer = players[i];
+            uint256 initialBalance = prizePlayer.balance;
+            vm.prank(prizePlayer);
             lottery.claimPrize(gameNumber);
             
             uint256 expectedPrize;
@@ -703,7 +893,7 @@ contract LotteryPayoutTest is Test {
                 expectedPrize = expectedBronzePrize;
             }
             
-            assertEq(player.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
+            assertEq(prizePlayer.balance - initialBalance, expectedPrize, "Prize payout incorrect for player");
         }
 
         // Assert fee transfer
@@ -712,8 +902,8 @@ contract LotteryPayoutTest is Test {
         // Verify game state
         assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
         for (uint256 i = 0; i < 100; i++) {
-            address player = players[i];
-            assertTrue(lottery.prizesClaimed(gameNumber, player), "Prize should be marked as claimed for player");
+            address prizePlayer = players[i];
+            assertTrue(lottery.prizesClaimed(gameNumber, prizePlayer), "Prize should be marked as claimed for player");
         }
     }
 }

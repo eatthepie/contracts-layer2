@@ -387,7 +387,7 @@ contract Lottery is Ownable, ReentrancyGuard {
 
         for (uint256 i = 0; i < 4; i++) {
             uint256 maxValue = i < 3 ? maxNumber : maxEtherball;
-            calculatedNumbers[i] = generateUnbiasedRandomNumber(randomSeed, i, maxValue);
+            calculatedNumbers[i] = _generateUnbiasedRandomNumber(randomSeed, i, maxValue);
         }
 
         for (uint256 i = 0; i < 4; i++) {
@@ -702,11 +702,9 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param startGameId The ID of the first game in the range
      * @param endGameId The ID of the last game in the range
      * @return gameInfos An array of GameBasicInfo structs containing the requested game information
-     * @return nextGameId The ID of the next game after the range, or 0 if there are no more games
      */
     function getBasicGameInfo(uint256 startGameId, uint256 endGameId) external view returns (
-        GameBasicInfo[] memory gameInfos,
-        uint256 nextGameId
+        GameBasicInfo[] memory gameInfos
     ) {
         require(startGameId <= endGameId, "Invalid game range");
         require(endGameId - startGameId <= 10, "Max 10 games per query");
@@ -731,8 +729,6 @@ contract Lottery is Ownable, ReentrancyGuard {
                 winningNumbers: [gameWinningNumbers[gameId][0], gameWinningNumbers[gameId][1], gameWinningNumbers[gameId][2], gameWinningNumbers[gameId][3]]
             });
         }
-
-        nextGameId = endGameId + 1 <= currentGameNumber ? endGameId + 1 : 0;
     }
 
     /**
@@ -761,6 +757,65 @@ contract Lottery is Ownable, ReentrancyGuard {
             randaoValue: gameRandomValue[gameId],
             payouts: gamePayouts[gameId]
         });
+    }
+
+    /**
+     * @dev Checks if a user has won any prize in a specific game
+     * @param gameNumber The game number to check
+     * @param user The address of the user to check
+     * @return hasWon Boolean indicating if the user has won any prize
+     */
+    function hasUserWon(uint256 gameNumber, address user) external view returns (bool hasWon) {
+        require(gameNumber <= currentGameNumber, "Invalid game number");
+        require(gameDrawCompleted[gameNumber], "Game draw not completed yet");
+
+        uint256[4] memory winningNumbers = gameWinningNumbers[gameNumber];
+        
+        bytes32 goldTicketHash = _computeGoldTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
+        bytes32 silverTicketHash = _computeSilverTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2]);
+        bytes32 bronzeTicketHash = _computeBronzeTicketHash(winningNumbers[0], winningNumbers[1]);
+
+        hasWon = goldTicketOwners[gameNumber][goldTicketHash][user] ||
+                 silverTicketOwners[gameNumber][silverTicketHash][user] ||
+                 bronzeTicketOwners[gameNumber][bronzeTicketHash][user];
+    }
+
+    /**
+     * @dev Gets detailed information about a user's winnings for a specific game
+     * @param gameNumber The game number to check
+     * @param user The address of the user to check
+     * @return goldWin Boolean indicating if the user won the gold prize
+     * @return silverWin Boolean indicating if the user won the silver prize
+     * @return bronzeWin Boolean indicating if the user won the bronze prize
+     * @return totalPrize The total prize amount won by the user
+     * @return claimed Boolean indicating if the user has claimed their prize
+     */
+    function getUserGameWinnings(uint256 gameNumber, address user) external view returns (
+        bool goldWin,
+        bool silverWin,
+        bool bronzeWin,
+        uint256 totalPrize,
+        bool claimed
+    ) {
+        require(gameNumber <= currentGameNumber, "Invalid game number");
+        require(gameDrawCompleted[gameNumber], "Game draw not completed yet");
+
+        uint256[4] memory winningNumbers = gameWinningNumbers[gameNumber];
+        uint256[3] memory payouts = gamePayouts[gameNumber];
+        
+        bytes32 goldTicketHash = _computeGoldTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
+        bytes32 silverTicketHash = _computeSilverTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2]);
+        bytes32 bronzeTicketHash = _computeBronzeTicketHash(winningNumbers[0], winningNumbers[1]);
+
+        goldWin = goldTicketOwners[gameNumber][goldTicketHash][user];
+        silverWin = silverTicketOwners[gameNumber][silverTicketHash][user];
+        bronzeWin = bronzeTicketOwners[gameNumber][bronzeTicketHash][user];
+
+        if (goldWin) totalPrize += payouts[0];
+        if (silverWin) totalPrize += payouts[1];
+        if (bronzeWin) totalPrize += payouts[2];
+
+        claimed = prizesClaimed[gameNumber][user];
     }
 
     /**
