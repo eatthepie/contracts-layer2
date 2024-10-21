@@ -760,7 +760,7 @@ contract Lottery is Ownable, ReentrancyGuard {
             drawInitiatedBlock: gameDrawInitiated[gameId] ? gameRandomBlock[gameId] - DRAW_DELAY_SECURITY_BUFFER : 0,
             randaoBlock: gameRandomBlock[gameId],
             randaoValue: gameRandomValue[gameId],
-            payouts: gamePayouts[gameId]
+            payouts: [gamePayouts[gameId][0], gamePayouts[gameId][1], gamePayouts[gameId][2]]
         });
     }
 
