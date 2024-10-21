@@ -90,7 +90,7 @@ forge test --match-path test/[TestFileName].t.sol
 
 ## Documentation 📚
 
-For detailed information about our smart contracts and how they work, please visit our [in-depth documentation](https://docs.eatthepie.xyz).
+For detailed information about the smart contracts and how they work, please visit the [in-depth documentation](https://docs.eatthepie.xyz).
 
 ## License
 
