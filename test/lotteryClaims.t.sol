@@ -1,11 +1,8 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
 import "./mocks/mockLottery.sol";
-import "../src/VDFPietrzak.sol";
-import "../src/NFTPrize.sol";
-import "../src/libraries/BigNumbers.sol";
 
 contract LotteryClaimsTest is Test {
     MockLottery public lottery;
@@ -113,7 +110,6 @@ contract LotteryClaimsTest is Test {
 
     function testClaimPrizeNonWinner() public {
         fundLottery(5000);
-        uint256 initialBalance = player1.balance;
         uint256 gameNumber = lottery.currentGameNumber();
 
         // Player buys a non-winning ticket
@@ -169,7 +165,6 @@ contract LotteryClaimsTest is Test {
 
     function testClaimPrizeBeforePayoutCalculation() public {
         fundLottery(5000);
-        uint256 initialBalance = player1.balance;
         uint256 gameNumber = lottery.currentGameNumber();
 
         // Player buys a winning ticket
@@ -231,7 +226,6 @@ contract LotteryClaimsTest is Test {
     // NFT minting
     function testMintWinningNFT() public {
         fundLottery(5000);
-        uint256 initialBalance = player1.balance;
 
         uint256[4][] memory winningTicket = new uint256[4][](1);
         winningTicket[0] = [uint256(1), uint256(2), uint256(3), uint256(4)];
@@ -253,7 +247,6 @@ contract LotteryClaimsTest is Test {
 
     function testMintWinningNFTNonWinner() public {
         fundLottery(5000);
-        uint256 initialBalance = player1.balance;
 
         uint256[4][] memory winningTicket = new uint256[4][](1);
         winningTicket[0] = [uint256(1), uint256(2), uint256(3), uint256(4)];
@@ -276,7 +269,6 @@ contract LotteryClaimsTest is Test {
 
     function testMintWinningNFTTwice() public {
         fundLottery(5000);
-        uint256 initialBalance = player1.balance;
 
         uint256[4][] memory winningTicket = new uint256[4][](1);
         winningTicket[0] = [uint256(1), uint256(2), uint256(3), uint256(4)];

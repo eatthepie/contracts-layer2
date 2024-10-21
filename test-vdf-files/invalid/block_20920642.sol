@@ -1,9 +1,11 @@
-// ETH BLOCK 20920642 -> prevRandao: 2656751508725187512486344122081204096368588122458517885621621007542366135775
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import "../../src/libraries/BigNumbers.sol";
 
+/// @title VDF Proof Values
+/// @notice This contract stores hardcoded VDF proof values for testing purposes
+/// @dev From Ethereum Mainet Block 20920642, block.prevrandao: 2656751508725187512486344122081204096368588122458517885621621007542366135775
 library InvalidVDF_20920642 {
     function getX() external pure returns (BigNumber memory) {
         return BigNumber({

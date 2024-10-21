@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
-import "forge-std/console.sol";
 import "../src/VDFPietrzak.sol";
 
 // valid proofs
@@ -27,7 +26,7 @@ contract VDFPietrzakTest is Test {
     }
 
     /* valid proofs */
-    function testValidProof_20920622() public {
+    function testValidProof_20920622() public view {
         BigNumber memory x = ValidVDF_20920622.getX();
         BigNumber memory y = ValidVDF_20920622.getY();
         BigNumber[] memory v = ValidVDF_20920622.getV();
@@ -35,7 +34,7 @@ contract VDFPietrzakTest is Test {
         assertTrue(result, string.concat("Block 20920622 - Valid proof failed"));
     }
 
-    function testValidProof_20920632() public {
+    function testValidProof_20920632() public view {
         BigNumber memory x = ValidVDF_20920632.getX();
         BigNumber memory y = ValidVDF_20920632.getY();
         BigNumber[] memory v = ValidVDF_20920632.getV();
@@ -43,7 +42,7 @@ contract VDFPietrzakTest is Test {
         assertTrue(result, string.concat("Block 20920632 - Valid proof failed"));
     }
 
-    function testValidProof_20920642() public {
+    function testValidProof_20920642() public view {
         BigNumber memory x = ValidVDF_20920642.getX();
         BigNumber memory y = ValidVDF_20920642.getY();
         BigNumber[] memory v = ValidVDF_20920642.getV();
@@ -51,7 +50,7 @@ contract VDFPietrzakTest is Test {
         assertTrue(result, string.concat("Block 20920642 - Valid proof failed"));
     }
 
-    function testValidProof_20920652() public {
+    function testValidProof_20920652() public view {
         BigNumber memory x = ValidVDF_20920652.getX();
         BigNumber memory y = ValidVDF_20920652.getY();
         BigNumber[] memory v = ValidVDF_20920652.getV();
@@ -59,7 +58,7 @@ contract VDFPietrzakTest is Test {
         assertTrue(result, string.concat("Block 20920652 - Valid proof failed"));
     }
 
-    function testValidProof_20920662() public {
+    function testValidProof_20920662() public view {
         BigNumber memory x = ValidVDF_20920662.getX();
         BigNumber memory y = ValidVDF_20920662.getY();
         BigNumber[] memory v = ValidVDF_20920662.getV();
@@ -68,7 +67,7 @@ contract VDFPietrzakTest is Test {
     }
 
     /* invalid proofs */
-    function testInvalidProof_20920622() public {
+    function testInvalidProof_20920622() public view {
         BigNumber memory x = InvalidVDF_20920622.getX();
         BigNumber memory y = InvalidVDF_20920622.getY();
         BigNumber[] memory v = InvalidVDF_20920622.getV();
@@ -76,7 +75,7 @@ contract VDFPietrzakTest is Test {
         assertFalse(result, string.concat("20920622 - Invalid proof succeeded"));
     }
 
-    function testInvalidProof_20920632() public {
+    function testInvalidProof_20920632() public view {
         BigNumber memory x = InvalidVDF_20920632.getX();
         BigNumber memory y = InvalidVDF_20920632.getY();
         BigNumber[] memory v = InvalidVDF_20920632.getV();
@@ -84,7 +83,7 @@ contract VDFPietrzakTest is Test {
         assertFalse(result, string.concat("20920632 - Invalid proof succeeded"));
     }
 
-    function testInvalidProof_20920642() public {
+    function testInvalidProof_20920642() public view {
         BigNumber memory x = InvalidVDF_20920642.getX();
         BigNumber memory y = InvalidVDF_20920642.getY();
         BigNumber[] memory v = InvalidVDF_20920642.getV();
@@ -92,7 +91,7 @@ contract VDFPietrzakTest is Test {
         assertFalse(result, string.concat("20920642 - Invalid proof succeeded"));
     }
 
-    function testInvalidProof_20920652() public {
+    function testInvalidProof_20920652() public view {
         BigNumber memory x = InvalidVDF_20920652.getX();
         BigNumber memory y = InvalidVDF_20920652.getY();
         BigNumber[] memory v = InvalidVDF_20920652.getV();
@@ -100,7 +99,7 @@ contract VDFPietrzakTest is Test {
         assertFalse(result, string.concat("20920652 - Invalid proof succeeded"));
     }
 
-    function testInvalidProof_20920662() public {
+    function testInvalidProof_20920662() public view {
         BigNumber memory x = InvalidVDF_20920662.getX();
         BigNumber memory y = InvalidVDF_20920662.getY();
         BigNumber[] memory v = InvalidVDF_20920662.getV();

@@ -1,11 +1,8 @@
-// ALL PASSED
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
 import "../src/Lottery.sol";
-import "../src/VDFPietrzak.sol";
-import "../src/NFTPrize.sol";
 
 contract LotteryDrawingTest is Test {
     Lottery public lottery;
@@ -22,19 +19,20 @@ contract LotteryDrawingTest is Test {
         nftPrize = new NFTPrize();
         lottery = new Lottery(address(vdf), address(nftPrize), feeRecipient);
         vm.stopPrank();
+
+        vm.deal(player, 100000 ether);
     }
 
-    function fundLottery() internal {
-        vm.deal(player, 1000 ether);
+    function fundLottery(uint256 ticketCount) internal {
         vm.startPrank(player);
-        uint256 remainingTickets = 5000;
-
+        
+        uint256 remainingTickets = ticketCount;
         while (remainingTickets > 0) {
             uint256 batchSize = remainingTickets > 100 ? 100 : remainingTickets;
             
             uint256[4][] memory tickets = new uint256[4][](batchSize);
             for (uint256 i = 0; i < batchSize; i++) {
-                tickets[i] = [uint256(1), uint256(2), uint256(3), uint256(1)];
+                tickets[i] = [uint256(10), uint256(10), uint256(10), uint256(1)];
             }
             
             uint256 batchCost = TICKET_PRICE * batchSize;
@@ -48,7 +46,7 @@ contract LotteryDrawingTest is Test {
 
     function testInitiateDraw() public {
         // Fund the lottery
-        fundLottery();
+        fundLottery(5000);
 
         // Advance time
         vm.warp(block.timestamp + lottery.DRAW_MIN_TIME_PERIOD() + 1);
@@ -69,7 +67,7 @@ contract LotteryDrawingTest is Test {
 
     function testInitiateDrawTooSoon() public {
         // Fund the lottery
-        fundLottery();
+        fundLottery(5000);
 
         vm.expectRevert("Time interval not passed");
         lottery.initiateDraw();
@@ -85,7 +83,7 @@ contract LotteryDrawingTest is Test {
 
     function testInitiateDrawMultipleTimes() public {
         // Fund the lottery
-        fundLottery();
+        fundLottery(5000);
 
         // Advance time
         vm.warp(block.timestamp + lottery.DRAW_MIN_TIME_PERIOD() + 1);
@@ -98,7 +96,7 @@ contract LotteryDrawingTest is Test {
         lottery.initiateDraw();
 
         // Fund the lottery again
-        fundLottery();
+        fundLottery(5000);
 
         // Advance time again
         vm.warp(block.timestamp + lottery.DRAW_MIN_TIME_PERIOD() + 1);
@@ -113,14 +111,14 @@ contract LotteryDrawingTest is Test {
         lottery.setTicketPrice(newPrice);
 
         // Fund the lottery and advance time
-        fundLottery();
+        fundLottery(5000);
         vm.warp(block.timestamp + lottery.DRAW_MIN_TIME_PERIOD() + 1);
 
         // Initiate draws until we reach the game where the new price should take effect
         uint256 targetGameNumber = lottery.newTicketPriceGameNumber();
         while (lottery.currentGameNumber() < targetGameNumber - 1) {
             lottery.initiateDraw();
-            fundLottery();
+            fundLottery(5000);
             vm.warp(block.timestamp + lottery.DRAW_MIN_TIME_PERIOD() + 1);
         }
 

@@ -1,11 +1,8 @@
-// ALL PASSED
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
 import "../src/Lottery.sol";
-import "../src/VDFPietrzak.sol";
-import "../src/NFTPrize.sol";
 
 contract LotteryTicketingTest is Test {
     Lottery public lottery;

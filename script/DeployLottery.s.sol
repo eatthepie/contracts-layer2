@@ -9,9 +9,11 @@ import "../src/libraries/BigNumbers.sol";
 
 contract DeployLottery is Script {
     function run() external {
-        string memory pk = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-        uint256 deployerPrivateKey = vm.parseUint(pk);
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
+
+        // FEE RECIPIENT
+        address feeRecipient = address(0x123);
 
         // VDF Contract
         VDFPietrzak vdfContract = new VDFPietrzak();
@@ -22,7 +24,6 @@ contract DeployLottery is Script {
         console.log("NFT Contract deployed to:", address(nftContract));
 
         // Lottery Contract
-        address feeRecipient = address(0x123); // fee address
         Lottery lotteryContract = new Lottery(
             address(vdfContract),
             address(nftContract),

@@ -1,11 +1,8 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
 import "./mocks/mockLottery.sol";
-import "../src/VDFPietrzak.sol";
-import "../src/NFTPrize.sol";
-import "../src/libraries/BigNumbers.sol";
 
 contract LotteryBasicTest is Test {
     enum Difficulty { Easy, Medium, Hard }
@@ -67,7 +64,7 @@ contract LotteryBasicTest is Test {
         uint256 gameNumber = lottery.currentGameNumber() - 1;
         uint256 targetBlock = lottery.gameRandomBlock(gameNumber);
         vm.roll(targetBlock);
-        vm.prevrandao(bytes32(uint256(51049764388387882260001832746320922162275278963975484447753639501411130604681))); // make prevrandao non-zero
+        vm.prevrandao(bytes32(uint256(51049764388387882260001832746320922162275278963975484447753639501411130604681)));
         lottery.setRandom(gameNumber);
 
         // Mock VDF verification
@@ -87,7 +84,7 @@ contract LotteryBasicTest is Test {
     }
 
     // Basic
-    function testInitialState() public {
+    function testInitialState() public view {
         assertEq(lottery.currentGameNumber(), 1, "Initial game number should be 1");
         assertEq(lottery.ticketPrice(), TICKET_PRICE, "Initial ticket price should be 0.1 ether");
         assertEq(lottery.feeRecipient(), feeRecipient, "Fee recipient should be set correctly");
@@ -100,7 +97,7 @@ contract LotteryBasicTest is Test {
         assertEq(prizePool, 0, "Initial prize pool should be 0");
     }
 
-    function testGetCurrentGameInfo() public {
+    function testGetCurrentGameInfo() public view {
         (
             uint256 gameNumber,
             Lottery.Difficulty difficulty,

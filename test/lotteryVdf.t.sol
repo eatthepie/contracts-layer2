@@ -1,11 +1,8 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
 import "../src/Lottery.sol";
-import "../src/VDFPietrzak.sol";
-import "../src/NFTPrize.sol";
-import "../src/libraries/BigNumbers.sol";
 
 // valid vdf proofs
 import "../test-vdf-files/valid/block_20920622.sol";
@@ -309,7 +306,7 @@ contract LotteryVDFTest is Test {
         if (invalidV.length > 0) {
             invalidV[0].val = bytes("invalid_proof_data");
         }
-        (uint256[4] memory invalidCalculatedNumbers, bool invalidIsValid) = lottery.verifyPastGameVDF(gameNumber, invalidV, y);
+        (, bool invalidIsValid) = lottery.verifyPastGameVDF(gameNumber, invalidV, y);
 
         // Assert that the verification fails for invalid proof
         assertFalse(invalidIsValid, "Verification should fail for invalid proof");
@@ -352,16 +349,19 @@ contract LotteryVDFTest is Test {
         revert("Invalid VDF index");
     }
 
-    function generateUnbiasedRandomNumber(bytes32 seed, uint256 nonce, uint256 maxValue) internal pure returns (uint256) {
+    function generateUnbiasedRandomNumber(bytes32 seed, uint256 nonce, uint256 maxValue) internal pure returns (uint256 result) {
         uint256 maxAllowed = type(uint256).max - (type(uint256).max % maxValue);
         
         while (true) {
             uint256 randomNumber = uint256(keccak256(abi.encodePacked(seed, nonce)));
             if (randomNumber < maxAllowed) {
-                return (randomNumber % maxValue) + 1;
+                result = (randomNumber % maxValue) + 1;
+                break;
             }
             nonce++;
         }
+        
+        return result;
     }
 
     function getDifficultyParams(Lottery.Difficulty difficulty) internal pure returns (uint256 maxNumber, uint256 maxEtherball) {

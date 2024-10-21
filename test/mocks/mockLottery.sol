@@ -1,6 +1,6 @@
-// used to overwrite the Lottery contract for testing purposes
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.25;
+/* functions used to overwrite main lottery function for testing purposes */
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.25;
 
 import "../../src/Lottery.sol";
 

@@ -416,7 +416,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         uint256 prizePool = gamePrizePool[gameNumber];
         (uint256 goldPrize, uint256 silverPrize, uint256 bronzePrize, uint256 fee) = _calculatePrizes(prizePool);
 
-        fee = _handleExcessFee(fee, gameNumber);
+        fee = _handleExcessFee(fee);
 
         (uint256 goldWinnerCount, uint256 silverWinnerCount, uint256 bronzeWinnerCount) = _getWinnerCounts(gameNumber);
 
@@ -424,7 +424,7 @@ contract Lottery is Ownable, ReentrancyGuard {
 
         _storeGameOutcomes(gameNumber, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, goldWinnerCount);
 
-        uint256 excessPrizePool = _handleExcessPrizePool(prizePool, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, goldWinnerCount, silverWinnerCount, bronzeWinnerCount, fee, gameNumber);
+        _handleExcessPrizePool(prizePool, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner, goldWinnerCount, silverWinnerCount, bronzeWinnerCount, fee, gameNumber);
 
         gameDrawCompleted[gameNumber] = true;
         emit GamePrizePayoutInfo(gameNumber, goldPrizePerWinner, silverPrizePerWinner, bronzePrizePerWinner);
@@ -448,12 +448,11 @@ contract Lottery is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Handles excess fee by transferring it to the next game's prize pool
+     * @dev Handles excess fee by transferring it to the current game's prize pool
      * @param fee The calculated fee
-     * @param gameNumber The current game number
      * @return The adjusted fee amount
      */
-    function _handleExcessFee(uint256 fee, uint256 gameNumber) internal returns (uint256) {
+    function _handleExcessFee(uint256 fee) internal returns (uint256) {
         if (fee > FEE_MAX_IN_ETH) {
             uint256 excessFee = fee - FEE_MAX_IN_ETH;
             fee = FEE_MAX_IN_ETH;
