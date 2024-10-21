@@ -1,5 +1,7 @@
 // used to overwrite the Lottery contract for testing purposes
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.25;
+
 import "../../src/Lottery.sol";
 
 contract MockLottery is Lottery {

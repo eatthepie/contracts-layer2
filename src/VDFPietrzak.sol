@@ -11,11 +11,6 @@ import "./libraries/PietrzakLibrary.sol";
 contract VDFPietrzak {
     using BigNumbers for BigNumber;
 
-    struct BigNumberInput {
-        bytes val;
-        uint256 bitlen;
-    }
-
     /* 
         VDF parameters - using 2048 RSA Factoring Challenge as N modulus
         https://en.wikipedia.org/wiki/RSA_Factoring_Challenge
@@ -51,23 +46,15 @@ contract VDFPietrzak {
      * @return bool True if the proof is valid, false otherwise
      */
     function verifyPietrzak(
-        BigNumberInput[] memory v,
-        BigNumberInput memory x,
-        BigNumberInput memory y
+        BigNumber[] memory v,
+        BigNumber memory x,
+        BigNumber memory y
     ) external view returns (bool) {
         BigNumber memory n = BigNumber({
             val: nBytes,
             bitlen: nBitLength
         });
 
-        BigNumber[] memory vBig = new BigNumber[](v.length);
-        for (uint i = 0; i < v.length; i++) {
-            vBig[i] = BigNumber({val: v[i].val, bitlen: v[i].bitlen});
-        }
-
-        BigNumber memory xBig = BigNumber({val: x.val, bitlen: x.bitlen});
-        BigNumber memory yBig = BigNumber({val: y.val, bitlen: y.bitlen});
-
-        return PietrzakLibrary.verify(vBig, xBig, yBig, n, delta, T);
+        return PietrzakLibrary.verify(v, x, y, n, delta, T);
     }
 }

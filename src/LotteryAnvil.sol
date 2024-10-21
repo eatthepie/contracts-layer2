@@ -1,3 +1,15 @@
+/* TESTING ONLY */
+
+// IMPORTANT
+// ------------------------------------------------------
+// The LotteryAnvil contract is for local testing on Anvil because:
+//
+// Anvil Limitation: 
+//    Anvil doesn't fully support block.prevrandao, which is used in the 
+//    main Lottery contract for randomness generation. 
+//    On Anvil, block.prevrandao always returns 0, which would break 
+//    the Lottery's randomness mechanism.
+
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
@@ -9,10 +21,11 @@ import "./VDFPietrzak.sol";
 import "./NFTPrize.sol";
 
 /**
- * @title Lottery
+ * @title LotteryAnvil
  * @dev Implements a decentralized lottery system with VDF-based randomness and NFT prizes
+ * @dev This is for testing purposes only. We use predfined values for block.prevrandao
  */
-contract Lottery is Ownable, ReentrancyGuard {
+contract LotteryAnvil is Ownable, ReentrancyGuard {
     using BigNumbers for BigNumber;
 
     // Enums
@@ -81,6 +94,10 @@ contract Lottery is Ownable, ReentrancyGuard {
     address public newVDFContract;
     uint256 public newVDFContractGameNumber;
 
+    uint256 public constant PREVRANDAO_COUNT = 29;
+    uint256[PREVRANDAO_COUNT] public prevrandaoValues;
+    uint256 public currentIndex;
+
     // Mappings
     mapping(uint256 => uint256) public gameStartBlock;
     mapping(uint256 => Difficulty) public gameDifficulty;
@@ -133,6 +150,36 @@ contract Lottery is Ownable, ReentrancyGuard {
         gameStartBlock[currentGameNumber] = block.number;
         lastDrawTime = block.timestamp;
         feeRecipient = _feeRecipient;
+
+        prevrandaoValues[0] = 51049764388387882260001832746320922162275278963975484447753639501411130604681;
+        prevrandaoValues[1] = 114647039150845253957106505659935793700741113189057202690540750438316827384848;
+        prevrandaoValues[2] = 2656751508725187512486344122081204096368588122458517885621621007542366135775;
+        prevrandaoValues[3] = 96618837226557606533137319610808329371780981598490822395441686749465502125142;
+        prevrandaoValues[4] = 51434773657427415913027395301743798367869859907808600986758584585820106414285;
+        prevrandaoValues[5] = 77199305852763991619765381452581945440280507230326453723346245677861653471063;
+        prevrandaoValues[6] = 59990989837271091833382273688356937268795413672166946267660876871642195009438;
+        prevrandaoValues[7] = 36676468656620308621211797666091354935984711877239173080112984515828038939051;
+        prevrandaoValues[8] = 85697561369555299673517896277053419839231953934365698570431571823210297535292;
+        prevrandaoValues[9] = 22517270229045003403001631809106535382982165988669329928144820079709611988034;
+        prevrandaoValues[10] = 62040869921184974299683266977024177882617168160436995017339782279188958518568;
+        prevrandaoValues[11] = 3742299576539977290353696032329569160429005173641040289439272819914257924048;
+        prevrandaoValues[12] = 63749009331939910965282487505685731590652579266490021080961931679540086165062;
+        prevrandaoValues[13] = 56794684067659848569949081870506295711490180170142117020965104265720263715714;
+        prevrandaoValues[14] = 29594873761378778644957129285274086977318519009986584307007614122433751894707;
+        prevrandaoValues[15] = 4500889233782608779799240686613350252512216476878923483501834892110225407209;
+        prevrandaoValues[16] = 82411683116184644398436276416130226034054239508378028249195514431512028775612;
+        prevrandaoValues[17] = 39465968593106643096084390312555437936097007607854184333644335743307192651075;
+        prevrandaoValues[18] = 16926355081554932293127263620941454350188791613098925998296098861142719546412;
+        prevrandaoValues[19] = 21661501667492044690012531394095317909416678194034192824917750098850207662593;
+        prevrandaoValues[20] = 68129622304463926526727147325872886634441290560104916576475931165817718995199;
+        prevrandaoValues[21] = 17367288974305421534987006751354799839325204778391789618277872660510084655726;
+        prevrandaoValues[22] = 56026316513409516298338045794918197379242969239455247886024559086502838373883;
+        prevrandaoValues[23] = 49403740388806625499641916536254761326065661663768618264521062745899599749617;
+        prevrandaoValues[24] = 69915517736187644398815546146017020594092559464580824474964452414653604092879;
+        prevrandaoValues[25] = 14608515538465303303881690003876779095180178128795528288780197331152497466148;
+        prevrandaoValues[26] = 71335656787318350770615992927401593964805269175834534977509736236758395043458;
+        prevrandaoValues[27] = 16295206386904369430685671792219467425088086964832939809888007942329494854936;
+        prevrandaoValues[28] = 100983649657646566905723616094317458225903911725934304773286517195169330207570;
     }
 
     /**
@@ -297,8 +344,14 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(gameDrawInitiated[gameNumber], "Draw not initiated for this game");
         require(block.number >= gameRandomBlock[gameNumber], "Buffer period not yet passed");
         require(gameRandomValue[gameNumber] == 0, "Random has already been set");
-        gameRandomValue[gameNumber] = block.prevrandao;
-        emit RandomSet(gameNumber, block.prevrandao);
+        
+        uint256 randomValue = prevrandaoValues[currentIndex];
+        gameRandomValue[gameNumber] = randomValue;
+        emit RandomSet(gameNumber, randomValue);
+        currentIndex = (currentIndex + 1) % prevrandaoValues.length;
+
+        // gameRandomValue[gameNumber] = block.prevrandao;
+        // emit RandomSet(gameNumber, block.prevrandao);
     }
 
     /**
@@ -896,6 +949,10 @@ contract Lottery is Ownable, ReentrancyGuard {
         if (bitlen == 0) {
             bitlen = 1;
         }
+    }
+
+    function resetIndex() external {
+        currentIndex = 0;
     }
 
     /**
