@@ -1,128 +1,72 @@
-# Eat The Pie Lottery
+![Eat The Pie](https://github.com/eatthepie/docs/blob/main/static/img/header.png)
 
-Eat The Pie is an Ethereum-based lottery system utilizing Verifiable Delay Functions (VDF) for secure and fair random number generation.
+# Eat The Pie Smart Contracts
 
-## Table of Contents
+This repository contains all smart contracts running Eat The Pie, a decentralized lottery on Ethereum using VDFs for random number generation.
 
-1. [Prerequisites](#prerequisites)
-2. [Installation](#installation)
-3. [Project Structure](#project-structure)
-4. [Configuration](#configuration)
-5. [Deployment](#deployment)
-6. [Interacting with Contracts](#interacting-with-contracts)
-7. [Testing](#testing)
-8. [Troubleshooting](#troubleshooting)
+## Project Structure
 
-## Prerequisites
+- `script/`: Deployment scripts
 
-- [Foundry](https://book.getfoundry.sh/getting-started/installation.html)
-- [Solidity](https://docs.soliditylang.org/en/v0.8.25/)
-- An Ethereum wallet with testnet ETH (for testnet deployments)
+  - `DeployLottery.s.sol`
+  - `DeployVDF.s.sol`
 
-## Installation
+- `src/`: Main contract files
 
-1. Clone the repository:
+  - `libraries/`: Utility libraries
+    - `BigNumbers.sol`
+    - `PietrzakLibrary.sol`
+  - `Lottery.sol`: Main lottery contract
+  - `NFTPrize.sol`: NFT prize contract
+  - `VDFPietrzak.sol`: Verifiable Delay Function implementation
+
+- `test/`: Test files
+
+  - `mocks/`: Mock contracts for testing
+  - Various test files for different lottery functionalities
+
+- `test-vdf-files/`: VDF test files
+  - `invalid/`: Invalid VDF test cases
+  - `valid/`: Valid VDF test cases
+
+## Setup
+
+1. Install Foundry if you haven't already:
 
    ```
-   git clone https://github.com/eatthepie/contracts.git
-   cd eat-the-pie
+   curl -L https://foundry.paradigm.xyz | bash
+   foundryup
    ```
 
-2. Install dependencies:
+2. Clone the repository:
+
+   ```
+   git clone https://github.com/eatthepie/contracts
+   cd contracts
+   ```
+
+3. Install dependencies:
    ```
    forge install
    ```
 
-## Project Structure
-
-```
-eat-the-pie/
-├── src/
-│   ├── EatThePieLottery.sol
-│   ├── NFTGenerator.sol
-│   ├── VDFPietrzak.sol
-│   └── libraries/
-│       ├── BigNumbers.sol
-│       └── PietrzakLibrary.sol
-├── script/
-│   └── DeployEatThePie.s.sol
-├── test/
-│   └── (test files)
-├── .env
-└── README.md
-```
-
-## Configuration
-
-1. Create a `.env` file in the project root:
-
-   ```
-   PRIVATE_KEY=your_private_key_here
-   RPC_URL=your_rpc_url_here
-   ```
-
-2. Update the `DeployEatThePie.s.sol` script with your specific parameters:
-   - `n`: The RSA modulus for the VDF
-   - `delta`: The VDF difficulty parameter
-   - `T`: The VDF time parameter
-   - `feeRecipient`: The address to receive lottery fees
-   - `vdfModulusN`: The VDF modulus N
-
 ## Deployment
 
-1. To deploy all contracts:
+To deploy the contracts to a network:
+
+1. Set up your `.env` file with the required environment variables (e.g., RPC_URL, PRIVATE_KEY).
+
+2. Run the deployment script:
 
    ```
-   forge script script/DeployEatThePie.s.sol:DeployEatThePie --rpc-url $RPC_URL --broadcast
+   forge script script/DeployLottery.s.sol:DeployLottery --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
    ```
 
-2. For testnet/mainnet deployments with contract verification:
-   ```
-   forge script script/DeployEatThePie.s.sol:DeployEatThePie --rpc-url $RPC_URL --broadcast --verify
-   ```
-
-## Interacting with Contracts
-
-After deployment, you can interact with the contracts using Forge's `cast` command or through a web3 interface.
-
-1. Buy a lottery ticket:
-
-   ```
-   cast send <EatThePieLottery_ADDRESS> "buyTicket(uint256[3],uint256)" "[1,2,3]" "4" --value 0.1ether
-   ```
-
-2. Initiate a draw:
-
-   ```
-   cast send <EatThePieLottery_ADDRESS> "initiateDraw()"
-   ```
-
-3. Set random number:
-
-   ```
-   cast send <EatThePieLottery_ADDRESS> "setRandom(uint256)" <GAME_NUMBER>
-   ```
-
-4. Submit VDF proof:
-
-   ```
-   cast send <EatThePieLottery_ADDRESS> "submitVDFProof(uint256,uint256[],(uint256[],uint256))" <GAME_NUMBER> <V_VALUES> <Y_VALUE>
-   ```
-
-5. Calculate payouts:
-
-   ```
-   cast send <EatThePieLottery_ADDRESS> "calculatePayouts(uint256)" <GAME_NUMBER>
-   ```
-
-6. Claim prize:
-   ```
-   cast send <EatThePieLottery_ADDRESS> "claimPrize(uint256)" <GAME_NUMBER>
-   ```
+   Replace `DeployLottery.s.sol` with the appropriate deployment script if needed.
 
 ## Testing
 
-Run the test suite:
+Run the test suite with:
 
 ```
 forge test
@@ -134,20 +78,29 @@ For more verbose output:
 forge test -vv
 ```
 
-## Troubleshooting
+To run a specific test file:
 
-- If you encounter "out of gas" errors during deployment, try increasing the gas limit:
+```
+forge test --match-path test/[TestFileName].t.sol
+```
 
-  ```
-  forge script script/DeployEatThePie.s.sol:DeployEatThePie --rpc-url $RPC_URL --broadcast --gas-limit 5000000
-  ```
+## Main Features
 
-- For issues with contract verification, ensure you have the correct Etherscan API key set in your environment:
+- Lottery functionality: Implements a decentralized lottery system on Ethereum.
+- NFT prizes: Utilizes NFTs as lottery prizes, adding uniqueness to winnings.
+- Verifiable Delay Function (VDF): Ensures fairness and unpredictability in the lottery draw.
 
-  ```
-  export ETHERSCAN_API_KEY=your_api_key_here
-  ```
+## Usage
 
-- If you face issues with the VDF parameters, double-check the values in the deployment script and ensure they match your intended configuration.
+Interact with the deployed contracts using a wallet like MetaMask or programmatically through ethers.js or web3.js. Key functions include:
 
-For more detailed information about each contract and its functions, refer to the comments in the source code files.
+1. Buying lottery tickets
+2. Checking ticket status
+3. Claiming prizes
+4. Verifying lottery results using VDF
+
+Refer to the contract ABIs for detailed function signatures and event logs.
+
+## License
+
+This project is licensed under the MIT License.

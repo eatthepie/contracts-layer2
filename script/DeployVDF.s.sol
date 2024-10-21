@@ -1,4 +1,3 @@
-// forge script script/DeployVDF.s.sol:DeployVDF --rpc-url http://localhost:8545 --broadcast
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 

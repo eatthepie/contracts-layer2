@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-// pragma solidity 0.8.26;
 pragma solidity ^0.8.25;
 
 import "./BigNumbers.sol";
 
+/// @notice This contract code adapted from usgeeus/Pietrzak-VDF-solidity-verifier
+/// @dev https://github.com/usgeeus/Pietrzak-VDF-solidity-verifier/blob/main/src/libraries/PietrzakLibrary.sol
 library PietrzakLibrary {
     /**
      * @dev Verifies a Pietrzak VDF proof
