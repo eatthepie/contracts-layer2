@@ -23,7 +23,14 @@ This repository contains all smart contracts running Eat The Pie, a decentralize
 - `test/`: Test files
 
   - `mocks/`: Mock contracts for testing
-  - Various test files for different lottery functionalities
+  - Test files:
+    - `lotteryBasic.t.sol`: Basic lottery functionality tests
+    - `lotteryClaims.t.sol`: Prize claiming tests
+    - `lotteryDrawing.t.sol`: Lottery drawing process tests
+    - `lotteryPayouts.t.sol`: Payout mechanism tests
+    - `lotteryTicketing.t.sol`: Ticket purchase and management tests
+    - `lotteryVdf.t.sol`: VDF integration tests
+    - `vdf.t.sol`: Standalone VDF tests
 
 - `test-vdf-files/`: VDF test files
   - `invalid/`: Invalid VDF test cases
@@ -57,14 +64,11 @@ To deploy the contracts to a network:
 1. Set up your `.env` file with the required environment variables (e.g., RPC_URL, PRIVATE_KEY).
 
 2. Run the deployment script:
-
    ```
    forge script script/DeployLottery.s.sol:DeployLottery --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
    ```
 
-   Replace `DeployLottery.s.sol` with the appropriate deployment script if needed.
-
-## Testing
+## Testing 🧪
 
 Run the test suite with:
 
@@ -84,22 +88,9 @@ To run a specific test file:
 forge test --match-path test/[TestFileName].t.sol
 ```
 
-## Main Features
+## Documentation 📚
 
-- Lottery functionality: Implements a decentralized lottery system on Ethereum.
-- NFT prizes: Utilizes NFTs as lottery prizes, adding uniqueness to winnings.
-- Verifiable Delay Function (VDF): Ensures fairness and unpredictability in the lottery draw.
-
-## Usage
-
-Interact with the deployed contracts using a wallet like MetaMask or programmatically through ethers.js or web3.js. Key functions include:
-
-1. Buying lottery tickets
-2. Checking ticket status
-3. Claiming prizes
-4. Verifying lottery results using VDF
-
-Refer to the contract ABIs for detailed function signatures and event logs.
+For detailed information about our smart contracts and how they work, please visit our [in-depth documentation](https://docs.eatthepie.xyz).
 
 ## License
 
