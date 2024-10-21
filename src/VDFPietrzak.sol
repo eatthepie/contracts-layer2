@@ -4,23 +4,18 @@ pragma solidity 0.8.25;
 import "./libraries/PietrzakLibrary.sol";
 
 /**
- * @title IMinimalPietrzak
- * @dev Interface for the minimal Pietrzak VDF verification function
- */
-interface IMinimalPietrzak {
-    function verifyPietrzak(
-        BigNumber[] memory v,
-        BigNumber memory x,
-        BigNumber memory y
-    ) external view returns (bool);
-}
-
-/**
  * @title VDFPietrzak
  * @dev Implementation of Pietrzak's Verifiable Delay Function (VDF)
  * This contract uses the RSA-2048 challenge number as the modulus for VDF computations
  */
-contract VDFPietrzak is IMinimalPietrzak {
+contract VDFPietrzak {
+    using BigNumbers for BigNumber;
+
+    struct BigNumberInput {
+        bytes val;
+        uint256 bitlen;
+    }
+
     /* 
         VDF parameters - using 2048 RSA Factoring Challenge as N modulus
         https://en.wikipedia.org/wiki/RSA_Factoring_Challenge
@@ -56,14 +51,23 @@ contract VDFPietrzak is IMinimalPietrzak {
      * @return bool True if the proof is valid, false otherwise
      */
     function verifyPietrzak(
-        BigNumber[] memory v,
-        BigNumber memory x,
-        BigNumber memory y
-    ) external view override returns (bool) {
+        BigNumberInput[] memory v,
+        BigNumberInput memory x,
+        BigNumberInput memory y
+    ) external view returns (bool) {
         BigNumber memory n = BigNumber({
             val: nBytes,
             bitlen: nBitLength
         });
-        return PietrzakLibrary.verify(v, x, y, n, delta, T);
+
+        BigNumber[] memory vBig = new BigNumber[](v.length);
+        for (uint i = 0; i < v.length; i++) {
+            vBig[i] = BigNumber({val: v[i].val, bitlen: v[i].bitlen});
+        }
+
+        BigNumber memory xBig = BigNumber({val: x.val, bitlen: x.bitlen});
+        BigNumber memory yBig = BigNumber({val: y.val, bitlen: y.bitlen});
+
+        return PietrzakLibrary.verify(vBig, xBig, yBig, n, delta, T);
     }
 }

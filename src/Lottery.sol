@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./VDFPietrzak.sol";
 import "./NFTPrize.sol";
-import "./libraries/BigNumbers.sol";
 
 /**
  * @title Lottery
@@ -50,9 +49,9 @@ contract Lottery is Ownable, ReentrancyGuard {
 
     // Constants
     uint256 private constant BASIS_POINTS = 10000;
-    uint256 public constant GOLD_PERCENTAGE = 6500;
+    uint256 public constant GOLD_PERCENTAGE = 6000;
     uint256 public constant SILVER_PLACE_PERCENTAGE = 2500;
-    uint256 public constant BRONZE_PLACE_PERCENTAGE = 900;
+    uint256 public constant BRONZE_PLACE_PERCENTAGE = 1400;
     uint256 public constant FEE_PERCENTAGE = 100;
     uint256 public constant FEE_MAX_IN_ETH = 100 ether;
     uint256 public constant EASY_MAX = 50;
@@ -305,12 +304,14 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param v Array of BigNumber values for VDF verification
      * @param y The final output of the VDF
      */
-    function submitVDFProof(uint256 gameNumber, BigNumber[] memory v, BigNumber memory y) external nonReentrant {
+    function submitVDFProof(uint256 gameNumber, VDFPietrzak.BigNumberInput[] memory v, VDFPietrzak.BigNumberInput memory y) external nonReentrant {
         require(gameRandomValue[gameNumber] != 0, "Random value not set for this game");
         require(!gameVDFValid[gameNumber], "VDF proof already submitted for this game");
 
         // VDF Verification
-        BigNumber memory x = BigNumbers.init(abi.encodePacked(gameRandomValue[gameNumber]));
+        (bytes memory val, uint256 bitlen) = uint256ToBigNumberInput(gameRandomValue[gameNumber]);
+        VDFPietrzak.BigNumberInput memory x = VDFPietrzak.BigNumberInput({val: val, bitlen: bitlen});
+
         bool isValid = vdfContract.verifyPietrzak(v, x, y);
         require(isValid, "Invalid VDF proof");
 
@@ -369,11 +370,12 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @return calculatedNumbers The calculated winning numbers
      * @return isValid Whether the proof is valid
      */
-    function verifyPastGameVDF(uint256 gameNumber, BigNumber[] memory v, BigNumber memory y) external view returns (uint256[4] memory calculatedNumbers, bool isValid) {
+    function verifyPastGameVDF(uint256 gameNumber, VDFPietrzak.BigNumberInput[] memory v, VDFPietrzak.BigNumberInput memory y) external view returns (uint256[4] memory calculatedNumbers, bool isValid) {
         require(gameNumber < currentGameNumber, "Game has not ended yet");
         require(gameRandomValue[gameNumber] != 0, "Random value not set for this game");
 
-        BigNumber memory x = BigNumbers.init(abi.encodePacked(gameRandomValue[gameNumber]));
+        (bytes memory val, uint256 bitlen) = uint256ToBigNumberInput(gameRandomValue[gameNumber]);
+        VDFPietrzak.BigNumberInput memory x = VDFPietrzak.BigNumberInput({val: val, bitlen: bitlen});
         isValid = vdfContract.verifyPietrzak(v, x, y);
 
         if (!isValid) {
@@ -750,7 +752,7 @@ contract Lottery is Ownable, ReentrancyGuard {
             status: status,
             prizePool: gamePrizePool[gameId],
             numberOfWinners: totalWinners,
-            winningNumbers: gameWinningNumbers[gameId],
+            winningNumbers: [gameWinningNumbers[gameId][0], gameWinningNumbers[gameId][1], gameWinningNumbers[gameId][2], gameWinningNumbers[gameId][3]],
             difficulty: gameDifficulty[gameId],
             drawInitiatedBlock: gameDrawInitiated[gameId] ? gameRandomBlock[gameId] - DRAW_DELAY_SECURITY_BUFFER : 0,
             randaoBlock: gameRandomBlock[gameId],
@@ -864,6 +866,33 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(_newFeeRecipient != address(0) && _newFeeRecipient != feeRecipient, "Invalid fee recipient address");
         feeRecipient = _newFeeRecipient;
         emit FeeRecipientChanged(_newFeeRecipient);
+    }
+
+    /**
+    * @dev Converts a uint256 to a BigNumber input format used in VDF function.
+    * 
+    * @param input The uint256 value to be converted
+    * @return val The byte array representation of the input
+    * @return bitlen The bit length of the significant part of the input
+    */
+    function uint256ToBigNumberInput(uint256 input) public pure returns (bytes memory val, uint256 bitlen) {
+        // Convert the input to a byte array
+        val = abi.encodePacked(input);
+        
+        // Initialize bitlen to the maximum possible for uint256
+        bitlen = 256;
+
+        // Count leading zero bytes to determine the actual bit length
+        uint256 i = 0;
+        while (i < 32 && val[i] == 0) {
+            bitlen -= 8;  // Decrease bitlen by 8 for each leading zero byte
+            i++;
+        }
+
+        // Ensure bitlen is at least 1, even for input 0
+        if (bitlen == 0) {
+            bitlen = 1;
+        }
     }
 
     /**
