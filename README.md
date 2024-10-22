@@ -2,9 +2,9 @@
 
 # Eat The Pie Smart Contracts
 
-This repository contains all smart contracts running Eat The Pie, a decentralized lottery on Ethereum using VDFs for random number generation.
+This repository contains all smart contracts running [eatthepie.eth](https://www.eatthepie.xyz), the world lottery on Ethereum.
 
-## Project Structure
+## Project Structure 📂
 
 - `script/`: Deployment scripts
 
@@ -92,6 +92,6 @@ forge test --match-path test/[TestFileName].t.sol
 
 For detailed information about the smart contracts and how they work, please visit the [in-depth documentation](https://docs.eatthepie.xyz).
 
-## License
+## License 📜
 
 This project is licensed under the MIT License.
