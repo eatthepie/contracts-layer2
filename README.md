@@ -1,6 +1,6 @@
 ![Eat The Pie](https://github.com/eatthepie/docs/blob/main/static/img/header.png)
 
-# Eat The Pie Smart Contracts
+# EatThePie Smart Contracts
 
 This repository contains all smart contracts running [eatthepie.eth](https://www.eatthepie.xyz), the world lottery on Ethereum.
 

@@ -9,7 +9,14 @@ import "./VDFPietrzak.sol";
 import "./NFTPrize.sol";
 
 /**
- * @title Lottery
+    ███████╗ █████╗ ████████╗    ████████╗██╗  ██╗███████╗    ██████╗ ██╗███████╗
+    ██╔════╝██╔══██╗╚══██╔══╝    ╚══██╔══╝██║  ██║██╔════╝    ██╔══██╗██║██╔════╝
+    █████╗  ███████║   ██║          ██║   ███████║█████╗      ██████╔╝██║█████╗
+    ██╔══╝  ██╔══██║   ██║          ██║   ██╔══██║██╔══╝      ██╔═══╝ ██║██╔══╝
+    ███████╗██║  ██║   ██║          ██║   ██║  ██║███████╗    ██║     ██║███████╗
+    ╚══════╝╚═╝  ╚═╝   ╚═╝          ╚═╝   ╚═╝  ╚═╝╚══════╝    ╚═╝     ╚═╝╚══════╝
+
+ * @title EatThePie Lottery
  * @dev Implements a decentralized lottery system with VDF-based randomness and NFT prizes
  */
 contract Lottery is Ownable, ReentrancyGuard {
