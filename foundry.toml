@@ -9,11 +9,3 @@ libs = ["lib"]
 fs_permissions = [
     { access = "read", path = "test-files/" }
 ]
-
-[rpc_endpoints]
-mainnet = "${MAINNET_RPC_URL}"
-sepolia = "${SEPOLIA_RPC_URL}"
-
-[etherscan]
-mainnet = { key = "${ETHERSCAN_API_KEY}" }
-sepolia = { key = "${ETHERSCAN_API_KEY}" }
