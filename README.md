@@ -65,6 +65,7 @@ To deploy the contracts to a network:
 
 2. Run the deployment script:
    ```
+   source .env
    forge script script/DeployLottery.s.sol:DeployLottery --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
    ```
 
