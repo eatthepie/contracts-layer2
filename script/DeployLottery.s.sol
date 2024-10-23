@@ -5,7 +5,6 @@ import "forge-std/Script.sol";
 import "../src/VDFPietrzak.sol";
 import "../src/NFTPrize.sol";
 import "../src/Lottery.sol";
-import "../src/libraries/BigNumbers.sol";
 
 contract DeployLottery is Script {
     function run() external {
