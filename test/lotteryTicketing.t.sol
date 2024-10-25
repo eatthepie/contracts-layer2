@@ -21,21 +21,19 @@ contract LotteryTicketingTest is Test {
         vm.stopPrank();
     }
 
-    function computeBronzeTicketHash(uint256 numberOne, uint256 numberTwo) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(numberOne, numberTwo));
-    }
-
-    function computeSilverTicketHash(uint256 numberOne, uint256 numberTwo, uint256 numberThree) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(numberOne, numberTwo, numberThree));
-    }
-
-    function computeGoldTicketHash(uint256 numberOne, uint256 numberTwo, uint256 numberThree, uint256 etherball) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(numberOne, numberTwo, numberThree, etherball));
+    function packNumbers(uint256[4] memory numbers) internal pure returns (uint32) {
+        return uint32(
+            (numbers[0] << 24) |
+            (numbers[1] << 16) |
+            (numbers[2] << 8) |
+            numbers[3]
+        );
     }
 
     function testBuyTicket() public {
         uint256[4][] memory tickets = new uint256[4][](1);
         tickets[0] = [uint256(1), uint256(2), uint256(3), uint256(4)];
+        uint32 packedNumbers = packNumbers(tickets[0]);
 
         vm.deal(player, 1 ether);
         vm.startPrank(player);
@@ -55,18 +53,21 @@ contract LotteryTicketingTest is Test {
         assertEq(player.balance, 1 ether - TICKET_PRICE, "Player's balance should decrease by ticket price");
         assertEq(lottery.playerTicketCount(player, 1), 1, "Player should have 1 ticket for the current game");
 
-        // Check if the ticket is properly recorded
-        bytes32 goldTicketHash = computeGoldTicketHash(1, 2, 3, 4);
-        assertTrue(lottery.goldTicketOwners(1, goldTicketHash, player), "Player should own the gold ticket");
-        assertEq(lottery.goldTicketCounts(1, goldTicketHash), 1, "Gold ticket count should be 1");
+        // Check if the ticket is properly recorded using packed numbers
+        assertTrue(lottery.ticketOwners(1, packedNumbers, player), 
+            "Player should own the gold ticket");
+        assertEq(lottery.ticketCounts(1, packedNumbers), 1, 
+            "Gold ticket count should be 1");
 
-        bytes32 silverTicketHash = computeSilverTicketHash(1, 2, 3);
-        assertTrue(lottery.silverTicketOwners(1, silverTicketHash, player), "Player should own the silver ticket");
-        assertEq(lottery.silverTicketCounts(1, silverTicketHash), 1, "Silver ticket count should be 1");
+        assertTrue(lottery.ticketOwners(1, packedNumbers & 0xFFFFFF00, player), 
+            "Player should own the silver ticket");
+        assertEq(lottery.ticketCounts(1, packedNumbers & 0xFFFFFF00), 1, 
+            "Silver ticket count should be 1");
 
-        bytes32 bronzeTicketHash = computeBronzeTicketHash(1, 2);
-        assertTrue(lottery.bronzeTicketOwners(1, bronzeTicketHash, player), "Player should own the bronze ticket");
-        assertEq(lottery.bronzeTicketCounts(1, bronzeTicketHash), 1, "Bronze ticket count should be 1");
+        assertTrue(lottery.ticketOwners(1, packedNumbers & 0xFFFF0000, player), 
+            "Player should own the bronze ticket");
+        assertEq(lottery.ticketCounts(1, packedNumbers & 0xFFFF0000), 1, 
+            "Bronze ticket count should be 1");
     }
 
     function testBuyTicketInvalidPrice() public {
@@ -146,17 +147,22 @@ contract LotteryTicketingTest is Test {
 
         // Check if each ticket is properly recorded
         for (uint i = 0; i < tickets.length; i++) {
-            bytes32 goldTicketHash = computeGoldTicketHash(tickets[i][0], tickets[i][1], tickets[i][2], tickets[i][3]);
-            assertTrue(lottery.goldTicketOwners(1, goldTicketHash, player), "Player should own the gold ticket");
-            assertEq(lottery.goldTicketCounts(1, goldTicketHash), 1, "Gold ticket count should be 1");
+            uint32 packedNumbers = packNumbers(tickets[i]);
 
-            bytes32 silverTicketHash = computeSilverTicketHash(tickets[i][0], tickets[i][1], tickets[i][2]);
-            assertTrue(lottery.silverTicketOwners(1, silverTicketHash, player), "Player should own the silver ticket");
-            assertEq(lottery.silverTicketCounts(1, silverTicketHash), 1, "Silver ticket count should be 1");
+            assertTrue(lottery.ticketOwners(1, packedNumbers, player), 
+                "Player should own the gold ticket");
+            assertEq(lottery.ticketCounts(1, packedNumbers), 1, 
+                "Gold ticket count should be 1");
 
-            bytes32 bronzeTicketHash = computeBronzeTicketHash(tickets[i][0], tickets[i][1]);
-            assertTrue(lottery.bronzeTicketOwners(1, bronzeTicketHash, player), "Player should own the bronze ticket");
-            assertEq(lottery.bronzeTicketCounts(1, bronzeTicketHash), 1, "Bronze ticket count should be 1");
+            assertTrue(lottery.ticketOwners(1, packedNumbers & 0xFFFFFF00, player), 
+                "Player should own the silver ticket");
+            assertEq(lottery.ticketCounts(1, packedNumbers & 0xFFFFFF00), 1, 
+                "Silver ticket count should be 1");
+
+            assertTrue(lottery.ticketOwners(1, packedNumbers & 0xFFFF0000, player), 
+                "Player should own the bronze ticket");
+            assertEq(lottery.ticketCounts(1, packedNumbers & 0xFFFF0000), 1, 
+                "Bronze ticket count should be 1");
         }
     }
 

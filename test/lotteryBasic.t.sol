@@ -231,7 +231,7 @@ contract LotteryBasicTest is Test {
         assertTrue(goldWin, "Player1 should have won gold");
         assertTrue(silverWin, "Player1 should have won silver");
         assertTrue(bronzeWin, "Player1 should have won bronze");
-        // assertEq(totalPrize, lottery.gamePayouts(gameNumber, 0), "Player1's prize should match gold payout"); -> incorrect, needs updating
+        assertEq(totalPrize, lottery.gamePayouts(gameNumber, 0) + lottery.gamePayouts(gameNumber, 1) + lottery.gamePayouts(gameNumber, 2), "Player1's prize should match gold + silver + bronze payout");
         assertFalse(claimed, "Player1's prize should not be claimed yet");
 
         // Check winnings for silver winner (player2)
@@ -239,7 +239,7 @@ contract LotteryBasicTest is Test {
         assertFalse(goldWin, "Player2 should not have won gold");
         assertTrue(silverWin, "Player2 should have won silver");
         assertTrue(bronzeWin, "Player2 should have won bronze");
-        // assertEq(totalPrize, lottery.gamePayouts(gameNumber, 1), "Player2's prize should match silver payout"); -> incorrect, needs updating
+        assertEq(totalPrize, lottery.gamePayouts(gameNumber, 1) + lottery.gamePayouts(gameNumber, 2), "Player2's prize should match silver + bronze payout");
         assertFalse(claimed, "Player2's prize should not be claimed yet");
 
         // Check winnings for bronze winner (player3)
@@ -247,7 +247,7 @@ contract LotteryBasicTest is Test {
         assertFalse(goldWin, "Player3 should not have won gold");
         assertFalse(silverWin, "Player3 should not have won silver");
         assertTrue(bronzeWin, "Player3 should have won bronze");
-        // assertEq(totalPrize, lottery.gamePayouts(gameNumber, 2), "Player3's prize should match bronze payout"); -> incorrect, needs updating
+        assertEq(totalPrize, lottery.gamePayouts(gameNumber, 2), "Player3's prize should match bronze payout");
         assertFalse(claimed, "Player3's prize should not be claimed yet");
 
         // Check for non-winner
@@ -259,13 +259,13 @@ contract LotteryBasicTest is Test {
         assertFalse(claimed, "Non-winner's prize should not be claimed");
 
         // Check for non-existent game
-        vm.expectRevert("Game draw not completed yet"); // should be invalid game number?
-        lottery.getUserGameWinnings(gameNumber + 1, player1);
+        uint256 currentGameNumber = lottery.currentGameNumber();
 
-        // Check for game that hasn't completed the draw
-        uint256 nextGameNumber = lottery.currentGameNumber();
         vm.expectRevert("Game draw not completed yet");
-        lottery.getUserGameWinnings(nextGameNumber, player1);
+        lottery.getUserGameWinnings(currentGameNumber, player1);
+
+        vm.expectRevert("Invalid game number");
+        lottery.getUserGameWinnings(currentGameNumber + 1, player1);
     }
 
     function testReceiveEther() public {

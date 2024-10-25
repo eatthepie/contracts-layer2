@@ -375,6 +375,7 @@ contract LotteryPayoutTest is Test {
 
     // 3 winners - 1 jackpot, 1 silver, 1 bronze
     function testScenarioB() public {
+        // Fund initial prize pool
         fundLottery(5000);
         uint256 gameNumber = lottery.currentGameNumber();
 
@@ -383,13 +384,26 @@ contract LotteryPayoutTest is Test {
         uint256[4] memory silverNumbers = [uint256(1), uint256(2), uint256(3), uint256(5)];
         uint256[4] memory bronzeNumbers = [uint256(1), uint256(2), uint256(4), uint256(5)];
 
-        // Buy winning tickets
-        vm.prank(player1);
+        // Pack the numbers for testing
+        uint32 packedGold = uint32(
+            (goldNumbers[0] << 24) |
+            (goldNumbers[1] << 16) |
+            (goldNumbers[2] << 8) |
+            goldNumbers[3]
+        );
+
+        // Each player buys a ticket
+        vm.startPrank(player1);
         lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(goldNumbers));
-        vm.prank(player2);
+        vm.stopPrank();
+
+        vm.startPrank(player2);
         lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(silverNumbers));
-        vm.prank(player3);
+        vm.stopPrank();
+
+        vm.startPrank(player3);
         lottery.buyTickets{value: TICKET_PRICE}(wrapTicket(bronzeNumbers));
+        vm.stopPrank();
 
         // Record initial balances
         uint256 initialPlayer1Balance = player1.balance;
@@ -397,7 +411,7 @@ contract LotteryPayoutTest is Test {
         uint256 initialPlayer3Balance = player3.balance;
         uint256 initialFeeRecipientBalance = feeRecipient.balance;
 
-        // Run game and set winning numbers
+        // Set up the game draw and get winning numbers
         setupDrawAndVDF();
         lottery.setWinningNumbersForTesting(gameNumber, goldNumbers);
         lottery.calculatePayouts(gameNumber);
@@ -412,19 +426,19 @@ contract LotteryPayoutTest is Test {
             expectedFee = lottery.FEE_MAX_IN_ETH();
         }
 
-        // Verify winner counts
-        bytes32 goldTicketHash = keccak256(abi.encodePacked(goldNumbers[0], goldNumbers[1], goldNumbers[2], goldNumbers[3]));
-        bytes32 silverTicketHash = keccak256(abi.encodePacked(goldNumbers[0], goldNumbers[1], goldNumbers[2]));
-        bytes32 bronzeTicketHash = keccak256(abi.encodePacked(goldNumbers[0], goldNumbers[1]));
+        // Verify winner counts using packed numbers
+        assertEq(lottery.ticketCounts(gameNumber, packedGold), 1, 
+            "There should be exactly one gold ticket winner");
+        assertEq(lottery.ticketCounts(gameNumber, packedGold & 0xFFFFFF00), 2, 
+            "There should be exactly two silver ticket winners");
+        assertEq(lottery.ticketCounts(gameNumber, packedGold & 0xFFFF0000), 3, 
+            "There should be exactly three bronze ticket winners");
 
-        assertEq(lottery.goldTicketCounts(gameNumber, goldTicketHash), 1, "There should be exactly one gold ticket winner");
-        assertEq(lottery.silverTicketCounts(gameNumber, silverTicketHash), 2, "There should be exactly two silver ticket winners");
-        assertEq(lottery.bronzeTicketCounts(gameNumber, bronzeTicketHash), 3, "There should be exactly three bronze ticket winners");
+        // Verify game completion
+        assertTrue(lottery.gameDrawCompleted(gameNumber), 
+            "Game draw should be marked as completed");
 
-        // Assert game state
-        assertTrue(lottery.gameDrawCompleted(gameNumber), "Game draw should be marked as completed");
-
-        // Verify payout information
+        // Verify stored payouts
         uint256 goldPayout = lottery.gamePayouts(gameNumber, 0);
         uint256 silverPayout = lottery.gamePayouts(gameNumber, 1);
         uint256 bronzePayout = lottery.gamePayouts(gameNumber, 2);
@@ -433,24 +447,45 @@ contract LotteryPayoutTest is Test {
         assertEq(silverPayout, expectedSilverPrize / 2, "Stored silver payout incorrect");
         assertEq(bronzePayout, expectedBronzePrize / 3, "Stored bronze payout incorrect");
 
-        // Verify ticket counts
+        // Verify ticket counts for each player
         assertEq(lottery.playerTicketCount(player1, gameNumber), 1, "Player 1 ticket count incorrect");
         assertEq(lottery.playerTicketCount(player2, gameNumber), 1, "Player 2 ticket count incorrect");
         assertEq(lottery.playerTicketCount(player3, gameNumber), 1, "Player 3 ticket count incorrect");
 
-        // Claim prizes
+        // Players claim their prizes
         vm.prank(player1);
         lottery.claimPrize(gameNumber);
+        
         vm.prank(player2);
         lottery.claimPrize(gameNumber);
+        
         vm.prank(player3);
         lottery.claimPrize(gameNumber);
 
-        // Assert payouts
-        assertEq(player1.balance - initialPlayer1Balance, goldPayout + silverPayout + bronzePayout, "Gold prize payout incorrect");
-        assertEq(player2.balance - initialPlayer2Balance, silverPayout + bronzePayout, "Silver prize payout incorrect");
-        assertEq(player3.balance - initialPlayer3Balance, bronzePayout, "Bronze prize payout incorrect");
-        assertEq(feeRecipient.balance - initialFeeRecipientBalance, expectedFee, "Fee transfer incorrect");
+        // Verify final balances
+        assertEq(
+            player1.balance - initialPlayer1Balance, 
+            goldPayout + silverPayout + bronzePayout, 
+            "Gold winner prize payout incorrect"
+        );
+        
+        assertEq(
+            player2.balance - initialPlayer2Balance, 
+            silverPayout + bronzePayout, 
+            "Silver winner prize payout incorrect"
+        );
+        
+        assertEq(
+            player3.balance - initialPlayer3Balance, 
+            bronzePayout, 
+            "Bronze winner prize payout incorrect"
+        );
+        
+        assertEq(
+            feeRecipient.balance - initialFeeRecipientBalance, 
+            expectedFee, 
+            "Fee transfer incorrect"
+        );
     }
 
     // 2 winners - 0 jackpot, 1 silver, 1 bronze

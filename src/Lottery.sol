@@ -98,12 +98,9 @@ contract Lottery is Ownable, ReentrancyGuard {
     mapping(uint256 => uint256[4]) public gameWinningNumbers;
     mapping(uint256 => uint256[3]) public gamePayouts;
     mapping(address => mapping(uint256 => uint256)) public playerTicketCount;
-    mapping(uint256 => mapping(bytes32 => uint256)) public goldTicketCounts;
-    mapping(uint256 => mapping(bytes32 => mapping(address => bool))) public goldTicketOwners;
-    mapping(uint256 => mapping(bytes32 => uint256)) public silverTicketCounts;
-    mapping(uint256 => mapping(bytes32 => mapping(address => bool))) public silverTicketOwners;
-    mapping(uint256 => mapping(bytes32 => uint256)) public bronzeTicketCounts;
-    mapping(uint256 => mapping(bytes32 => mapping(address => bool))) public bronzeTicketOwners;
+    mapping(uint256 => mapping(uint32 => uint256)) public ticketCounts;
+    mapping(uint256 => mapping(uint32 => mapping(address => bool))) public ticketOwners;
+
     mapping(uint256 => bool) public gameDrawInitiated;
     mapping(uint256 => uint256) public gameRandomValue;
     mapping(uint256 => uint256) public gameRandomBlock;
@@ -154,102 +151,122 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(ticketCount > 0 && ticketCount <= 100, "Invalid ticket count");
         require(msg.value == ticketPrice * ticketCount, "Incorrect total price");
 
+        uint256 gameNum = currentGameNumber;
+        address player = msg.sender;
+
+        unchecked {
+            gamePrizePool[gameNum] += msg.value;
+            playerTicketCount[player][gameNum] += ticketCount;
+        }
+
         for (uint256 i = 0; i < ticketCount;) {
-            _processSingleTicketPurchase([tickets[i][0], tickets[i][1], tickets[i][2]], tickets[i][3]);
+            _processSingleTicketPurchase(
+                tickets[i],
+                gameNum,
+                player
+            );
             unchecked { ++i; }
         }
 
-        playerTicketCount[msg.sender][currentGameNumber] += ticketCount;
-        emit TicketsPurchased(msg.sender, currentGameNumber, ticketCount);
+        emit TicketsPurchased(player, gameNum, ticketCount);
     }
 
     /**
-     * @dev Internal function to process a single ticket purchase
-     * @param numbers Array of 3 main numbers
-     * @param etherball The etherball number
+     * @dev Process a single ticket purchase
+     * @param ticketData Array of ticket numbers (3 numbers + 1 etherball)
+     * @param gameNum The game number to purchase the ticket for
      */
-    function _processSingleTicketPurchase(uint256[3] memory numbers, uint256 etherball) internal {
-        require(_validateNumbers(numbers, etherball, currentGameNumber), "Invalid numbers");
+    function _processSingleTicketPurchase(
+        uint256[4] calldata ticketData,
+        uint256 gameNum,
+        address player
+    ) internal {
+        (bool valid, uint32 packedNumbers) = _validateAndPackNumbers(ticketData);
+        require(valid, "Invalid numbers");
 
-        bytes32 goldTicket = _computeGoldTicketHash(numbers[0], numbers[1], numbers[2], etherball);
-        bytes32 silverTicket = _computeSilverTicketHash(numbers[0], numbers[1], numbers[2]);
-        bytes32 bronzeTicket = _computeBronzeTicketHash(numbers[0], numbers[1]);
+        uint32 goldTicket = packedNumbers;                    // All numbers
+        uint32 silverTicket = packedNumbers & 0xFFFFFF00;     // First 3 numbers
+        uint32 bronzeTicket = packedNumbers & 0xFFFF0000;     // First 2 numbers
 
-        if (!goldTicketOwners[currentGameNumber][goldTicket][msg.sender]) {
-            goldTicketOwners[currentGameNumber][goldTicket][msg.sender] = true;
-            goldTicketCounts[currentGameNumber][goldTicket] += 1;
-        }
+        _updateTicketState(
+            goldTicket,
+            silverTicket,
+            bronzeTicket,
+            gameNum,
+            player
+        );
 
-        if (!silverTicketOwners[currentGameNumber][silverTicket][msg.sender]) {
-            silverTicketOwners[currentGameNumber][silverTicket][msg.sender] = true;
-            silverTicketCounts[currentGameNumber][silverTicket] += 1;
-        }
-
-        if (!bronzeTicketOwners[currentGameNumber][bronzeTicket][msg.sender]) {
-            bronzeTicketOwners[currentGameNumber][bronzeTicket][msg.sender] = true;
-            bronzeTicketCounts[currentGameNumber][bronzeTicket] += 1;
-        }
-
-        gamePrizePool[currentGameNumber] += ticketPrice;
-
-        emit TicketPurchased(msg.sender, currentGameNumber, numbers, etherball);
+        emit TicketPurchased(
+            player,
+            gameNum,
+            [ticketData[0], ticketData[1], ticketData[2]],
+            ticketData[3]
+        );
     }
 
     /**
-     * @dev Validates the ticket numbers against the current game's difficulty
-     * @param numbers Array of 3 main numbers
-     * @param etherball The etherball number
-     * @param gameNumber The game number to validate against
-     * @return bool indicating if the numbers are valid
-     */
-    function _validateNumbers(uint256[3] memory numbers, uint256 etherball, uint256 gameNumber) internal view returns (bool) {
-        Difficulty difficulty = gameDifficulty[gameNumber];
+    * @dev Validate and pack numbers into uint32
+    * @param numbers Array of 4 numbers (3 main numbers + 1 etherball)
+    */
+    function _validateAndPackNumbers(uint256[4] calldata numbers) internal view returns (bool, uint32) {
+        Difficulty difficulty = gameDifficulty[currentGameNumber];
         (uint256 maxNumber, uint256 maxEtherball) = _getDifficultyParams(difficulty);
 
         for (uint256 i = 0; i < 3; i++) {
             if (numbers[i] < 1 || numbers[i] > maxNumber) {
-                return false;
+                return (false, 0);
+            }
+        }
+        
+        if (numbers[3] < 1 || numbers[3] > maxEtherball) {
+            return (false, 0);
+        }
+
+        uint32 packed = uint32(
+            (numbers[0] << 24) |
+            (numbers[1] << 16) |
+            (numbers[2] << 8) |
+            numbers[3]
+        );
+
+        return (true, packed);
+    }
+
+    /**
+    * @dev Update ticket state for all ticket types
+    * @param goldTicket The gold ticket number
+    * @param silverTicket The silver ticket number
+    * @param bronzeTicket The bronze ticket number
+    * @param gameNum The game number
+    * @param player The player address
+    */
+    function _updateTicketState(
+        uint32 goldTicket,
+        uint32 silverTicket,
+        uint32 bronzeTicket,
+        uint256 gameNum,
+        address player
+    ) internal {
+        if (!ticketOwners[gameNum][goldTicket][player]) {
+            ticketOwners[gameNum][goldTicket][player] = true;
+            unchecked {
+                ticketCounts[gameNum][goldTicket]++;
             }
         }
 
-        if (etherball < 1 || etherball > maxEtherball) {
-            return false;
+        if (!ticketOwners[gameNum][silverTicket][player]) {
+            ticketOwners[gameNum][silverTicket][player] = true;
+            unchecked {
+                ticketCounts[gameNum][silverTicket]++;
+            }
         }
 
-        return true;
-    }
-
-    /**
-     * @dev Computes the hash for a gold ticket
-     * @param numberOne First main number
-     * @param numberTwo Second main number
-     * @param numberThree Third main number
-     * @param etherball The etherball number
-     * @return bytes32 Hash of the gold ticket
-     */
-    function _computeGoldTicketHash(uint256 numberOne, uint256 numberTwo, uint256 numberThree, uint256 etherball) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(numberOne, numberTwo, numberThree, etherball));
-    }
-
-    /**
-     * @dev Computes the hash for a silver ticket
-     * @param numberOne First main number
-     * @param numberTwo Second main number
-     * @param numberThree Third main number
-     * @return bytes32 Hash of the silver ticket
-     */
-    function _computeSilverTicketHash(uint256 numberOne, uint256 numberTwo, uint256 numberThree) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(numberOne, numberTwo, numberThree));
-    }
-
-    /**
-     * @dev Computes the hash for a bronze ticket
-     * @param numberOne First main number
-     * @param numberTwo Second main number
-     * @return bytes32 Hash of the bronze ticket
-     */
-    function _computeBronzeTicketHash(uint256 numberOne, uint256 numberTwo) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(numberOne, numberTwo));
+        if (!ticketOwners[gameNum][bronzeTicket][player]) {
+            ticketOwners[gameNum][bronzeTicket][player] = true;
+            unchecked {
+                ticketCounts[gameNum][bronzeTicket]++;
+            }
+        }
     }
 
     /**
@@ -383,7 +400,11 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @return calculatedNumbers The calculated winning numbers
      * @return isValid Whether the proof is valid
      */
-    function verifyPastGameVDF(uint256 gameNumber, BigNumber[] memory v, BigNumber memory y) external view returns (uint256[4] memory calculatedNumbers, bool isValid) {
+    function verifyPastGameVDF(
+        uint256 gameNumber, 
+        BigNumber[] memory v, 
+        BigNumber memory y
+    ) external view returns (uint256[4] memory calculatedNumbers, bool isValid) {
         require(gameNumber < currentGameNumber, "Game has not ended yet");
         require(gameRandomValue[gameNumber] != 0, "Random value not set for this game");
 
@@ -405,13 +426,21 @@ contract Lottery is Ownable, ReentrancyGuard {
             calculatedNumbers[i] = _generateUnbiasedRandomNumber(randomSeed, i, maxValue);
         }
 
-        for (uint256 i = 0; i < 4; i++) {
-            if (calculatedNumbers[i] != gameWinningNumbers[gameNumber][i]) {
-                isValid = false;
-                break;
-            }
-        }
+        uint32 packedCalculated = uint32(
+            (calculatedNumbers[0] << 24) |
+            (calculatedNumbers[1] << 16) |
+            (calculatedNumbers[2] << 8) |
+            calculatedNumbers[3]
+        );
 
+        uint32 packedStored = uint32(
+            (gameWinningNumbers[gameNumber][0] << 24) |
+            (gameWinningNumbers[gameNumber][1] << 16) |
+            (gameWinningNumbers[gameNumber][2] << 8) |
+            gameWinningNumbers[gameNumber][3]
+        );
+
+        isValid = packedCalculated == packedStored;
         return (calculatedNumbers, isValid);
     }
 
@@ -478,16 +507,25 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @return silverWinnerCount The number of silver winners
      * @return bronzeWinnerCount The number of bronze winners
      */
-    function _getWinnerCounts(uint256 gameNumber) internal view returns (uint256 goldWinnerCount, uint256 silverWinnerCount, uint256 bronzeWinnerCount) {
+    function _getWinnerCounts(uint256 gameNumber) internal view returns (
+        uint256 goldWinnerCount,
+        uint256 silverWinnerCount,
+        uint256 bronzeWinnerCount
+    ) {
         uint256[4] memory winningNumbers = gameWinningNumbers[gameNumber];
-        bytes32 goldTicketHash = _computeGoldTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
-        bytes32 silverTicketHash = _computeSilverTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2]);
-        bytes32 bronzeTicketHash = _computeBronzeTicketHash(winningNumbers[0], winningNumbers[1]);
-
-        goldWinnerCount = goldTicketCounts[gameNumber][goldTicketHash];
-        silverWinnerCount = silverTicketCounts[gameNumber][silverTicketHash];
-        bronzeWinnerCount = bronzeTicketCounts[gameNumber][bronzeTicketHash];
+        
+        uint32 packedWinning = uint32(
+            (winningNumbers[0] << 24) |
+            (winningNumbers[1] << 16) |
+            (winningNumbers[2] << 8) |
+            winningNumbers[3]
+        );
+        
+        goldWinnerCount = ticketCounts[gameNumber][packedWinning];
+        silverWinnerCount = ticketCounts[gameNumber][packedWinning & 0xFFFFFF00];
+        bronzeWinnerCount = ticketCounts[gameNumber][packedWinning & 0xFFFF0000];
     }
+
 
     /**
      * @dev Calculates the prize amount per winner for each tier
@@ -611,21 +649,27 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @return totalPrize The total prize amount
      */
     function _calculateTotalPrize(uint256 gameNumber) internal view returns (uint256 totalPrize) {
-        uint256[3] memory payouts = gamePayouts[gameNumber];
         uint256[4] memory winningNumbers = gameWinningNumbers[gameNumber];
+        uint256[3] memory payouts = gamePayouts[gameNumber];
 
-        bytes32 goldTicketHash = _computeGoldTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
-        if (goldTicketOwners[gameNumber][goldTicketHash][msg.sender]) {
+        uint32 packedWinning = uint32(
+            (winningNumbers[0] << 24) |
+            (winningNumbers[1] << 16) |
+            (winningNumbers[2] << 8) |
+            winningNumbers[3]
+        );
+
+        if (ticketOwners[gameNumber][packedWinning][msg.sender]) {
             totalPrize += payouts[0];
         }
 
-        bytes32 silverTicketHash = _computeSilverTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2]);
-        if (silverTicketOwners[gameNumber][silverTicketHash][msg.sender]) {
+        uint32 silverTicket = packedWinning & 0xFFFFFF00;
+        if (ticketOwners[gameNumber][silverTicket][msg.sender]) {
             totalPrize += payouts[1];
         }
 
-        bytes32 bronzeTicketHash = _computeBronzeTicketHash(winningNumbers[0], winningNumbers[1]);
-        if (bronzeTicketOwners[gameNumber][bronzeTicketHash][msg.sender]) {
+        uint32 bronzeTicket = packedWinning & 0xFFFF0000;
+        if (ticketOwners[gameNumber][bronzeTicket][msg.sender]) {
             totalPrize += payouts[2];
         }
 
@@ -647,16 +691,22 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param gameNumber The game number to mint the NFT for
      */
     function mintWinningNFT(uint256 gameNumber) external nonReentrant {
-        bytes32 goldTicketHash = _computeGoldTicketHash(gameWinningNumbers[gameNumber][0], gameWinningNumbers[gameNumber][1], gameWinningNumbers[gameNumber][2], gameWinningNumbers[gameNumber][3]);
+        uint256[4] memory winningNums = gameWinningNumbers[gameNumber];
+        uint32 packedWinning = uint32(
+            (winningNums[0] << 24) |
+            (winningNums[1] << 16) |
+            (winningNums[2] << 8) |
+            winningNums[3]
+        );
 
-        require(goldTicketOwners[gameNumber][goldTicketHash][msg.sender], "Not a gold ticket winner");
+        require(ticketOwners[gameNumber][packedWinning][msg.sender], "Not a gold ticket winner");
         require(gameDrawCompleted[gameNumber] == true, "Game draw not completed yet");
         require(!hasClaimedNFT[gameNumber][msg.sender], "NFT already claimed for this game");
 
         uint256[3] memory payouts = gamePayouts[gameNumber];
 
         uint256 tokenId = uint256(keccak256(abi.encodePacked(gameNumber, msg.sender)));
-        nftPrize.mintNFT(msg.sender, tokenId, gameNumber, gameWinningNumbers[gameNumber], payouts[0]);
+        nftPrize.mintNFT(msg.sender, tokenId, gameNumber, winningNums, payouts[0]);
 
         hasClaimedNFT[gameNumber][msg.sender] = true;
         emit NFTMinted(msg.sender, tokenId, gameNumber);
@@ -732,7 +782,18 @@ contract Lottery is Ownable, ReentrancyGuard {
             GameStatus status = gameDrawCompleted[gameId] ? GameStatus.Completed :
                                 (gameDrawInitiated[gameId] ? GameStatus.Drawing : GameStatus.InPlay);
 
-            (uint256 goldWinners, uint256 silverWinners, uint256 bronzeWinners) = _getWinnerCounts(gameId);
+            // Pack winning numbers for efficient counting
+            uint32 packedWinning = uint32(
+                (gameWinningNumbers[gameId][0] << 24) |
+                (gameWinningNumbers[gameId][1] << 16) |
+                (gameWinningNumbers[gameId][2] << 8) |
+                gameWinningNumbers[gameId][3]
+            );
+
+            // Get winner counts using packed numbers
+            uint256 goldWinners = ticketCounts[gameId][packedWinning];
+            uint256 silverWinners = ticketCounts[gameId][packedWinning & 0xFFFFFF00];
+            uint256 bronzeWinners = ticketCounts[gameId][packedWinning & 0xFFFF0000];
             uint256 totalWinners = goldWinners + silverWinners + bronzeWinners;
 
             gameInfos[i] = GameBasicInfo({
@@ -740,7 +801,7 @@ contract Lottery is Ownable, ReentrancyGuard {
                 status: status,
                 prizePool: gamePrizePool[gameId],
                 numberOfWinners: totalWinners,
-                winningNumbers: [gameWinningNumbers[gameId][0], gameWinningNumbers[gameId][1], gameWinningNumbers[gameId][2], gameWinningNumbers[gameId][3]]
+                winningNumbers: gameWinningNumbers[gameId]
             });
         }
     }
@@ -755,8 +816,19 @@ contract Lottery is Ownable, ReentrancyGuard {
 
         GameStatus status = gameDrawCompleted[gameId] ? GameStatus.Completed :
                             (gameDrawInitiated[gameId] ? GameStatus.Drawing : GameStatus.InPlay);
+
+        // Pack winning numbers for efficient counting
+        uint32 packedWinning = uint32(
+            (gameWinningNumbers[gameId][0] << 24) |
+            (gameWinningNumbers[gameId][1] << 16) |
+            (gameWinningNumbers[gameId][2] << 8) |
+            gameWinningNumbers[gameId][3]
+        );
         
-        (uint256 goldWinners, uint256 silverWinners, uint256 bronzeWinners) = _getWinnerCounts(gameId);
+        // Get winner counts using packed numbers
+        uint256 goldWinners = ticketCounts[gameId][packedWinning];
+        uint256 silverWinners = ticketCounts[gameId][packedWinning & 0xFFFFFF00];
+        uint256 bronzeWinners = ticketCounts[gameId][packedWinning & 0xFFFF0000];
         uint256 totalWinners = goldWinners + silverWinners + bronzeWinners;
         
         return GameDetailedInfo({
@@ -767,12 +839,12 @@ contract Lottery is Ownable, ReentrancyGuard {
             goldWinners: goldWinners,
             silverWinners: silverWinners,
             bronzeWinners: bronzeWinners,
-            winningNumbers: [gameWinningNumbers[gameId][0], gameWinningNumbers[gameId][1], gameWinningNumbers[gameId][2], gameWinningNumbers[gameId][3]],
+            winningNumbers: gameWinningNumbers[gameId],
             difficulty: gameDifficulty[gameId],
             drawInitiatedBlock: gameDrawInitiated[gameId] ? gameRandomBlock[gameId] - DRAW_DELAY_SECURITY_BUFFER : 0,
             randaoBlock: gameRandomBlock[gameId],
             randaoValue: gameRandomValue[gameId],
-            payouts: [gamePayouts[gameId][0], gamePayouts[gameId][1], gamePayouts[gameId][2]]
+            payouts: gamePayouts[gameId]
         });
     }
 
@@ -786,15 +858,17 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(gameNumber <= currentGameNumber, "Invalid game number");
         require(gameDrawCompleted[gameNumber], "Game draw not completed yet");
 
-        uint256[4] memory winningNumbers = gameWinningNumbers[gameNumber];
-        
-        bytes32 goldTicketHash = _computeGoldTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
-        bytes32 silverTicketHash = _computeSilverTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2]);
-        bytes32 bronzeTicketHash = _computeBronzeTicketHash(winningNumbers[0], winningNumbers[1]);
+        uint256[4] memory winningNums = gameWinningNumbers[gameNumber];
+        uint32 packedWinning = uint32(
+            (winningNums[0] << 24) |
+            (winningNums[1] << 16) |
+            (winningNums[2] << 8) |
+            winningNums[3]
+        );
 
-        hasWon = goldTicketOwners[gameNumber][goldTicketHash][user] ||
-                 silverTicketOwners[gameNumber][silverTicketHash][user] ||
-                 bronzeTicketOwners[gameNumber][bronzeTicketHash][user];
+        hasWon = ticketOwners[gameNumber][packedWinning][user] ||
+                ticketOwners[gameNumber][packedWinning & 0xFFFFFF00][user] ||
+                ticketOwners[gameNumber][packedWinning & 0xFFFF0000][user];
     }
 
     /**
@@ -817,16 +891,19 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(gameNumber <= currentGameNumber, "Invalid game number");
         require(gameDrawCompleted[gameNumber], "Game draw not completed yet");
 
-        uint256[4] memory winningNumbers = gameWinningNumbers[gameNumber];
+        uint256[4] memory winningNums = gameWinningNumbers[gameNumber];
         uint256[3] memory payouts = gamePayouts[gameNumber];
         
-        bytes32 goldTicketHash = _computeGoldTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2], winningNumbers[3]);
-        bytes32 silverTicketHash = _computeSilverTicketHash(winningNumbers[0], winningNumbers[1], winningNumbers[2]);
-        bytes32 bronzeTicketHash = _computeBronzeTicketHash(winningNumbers[0], winningNumbers[1]);
+        uint32 packedWinning = uint32(
+            (winningNums[0] << 24) |
+            (winningNums[1] << 16) |
+            (winningNums[2] << 8) |
+            winningNums[3]
+        );
 
-        goldWin = goldTicketOwners[gameNumber][goldTicketHash][user];
-        silverWin = silverTicketOwners[gameNumber][silverTicketHash][user];
-        bronzeWin = bronzeTicketOwners[gameNumber][bronzeTicketHash][user];
+        goldWin = ticketOwners[gameNumber][packedWinning][user];
+        silverWin = ticketOwners[gameNumber][packedWinning & 0xFFFFFF00][user];
+        bronzeWin = ticketOwners[gameNumber][packedWinning & 0xFFFF0000][user];
 
         if (goldWin) totalPrize += payouts[0];
         if (silverWin) totalPrize += payouts[1];
