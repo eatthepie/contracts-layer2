@@ -30,13 +30,13 @@ contract VDFPietrzak {
      * @dev The number of iterations to skip in the verification process
      * This parameter affects the trade-off between prover and verifier computation time
      */
-    uint256 public constant delta = 4;
+    uint256 public constant delta = 10;
 
     /**
      * @dev The total number of iterations in the VDF computation (2^20)
      * This determines the delay of the function
      */
-    uint256 public constant T = 1048576; // 2^20
+    uint256 public constant T = 67108864; // 2^26
 
     /**
      * @dev Verifies a Pietrzak VDF proof
