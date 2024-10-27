@@ -129,23 +129,20 @@ library PietrzakLibrary {
     }
 
     /**
-     * @dev Computes a 128-bit hash of three byte arrays
-     * @param a First input byte array
-     * @param b Second input byte array
-     * @param c Third input byte array
-     * @return A BigNumber representing the last 16 bytes of the keccak256 hash
-     */
+        * @dev Computes a 128-bit hash of three byte arrays using keccak256
+        * @param a First byte array to be hashed
+        * @param b Second byte array to be hashed
+        * @param c Third byte array to be hashed
+        * @return BigNumber The 128-bit hash result as a BigNumber
+        */
     function _hash128(
         bytes memory a,
         bytes memory b,
         bytes memory c
     ) internal pure returns (BigNumber memory) {
-        bytes memory concatenated = abi.encodePacked(a,b,c);
-        bytes32 hash = keccak256(concatenated);
-        bytes memory last16Bytes = new bytes(16);
-        for (uint i = 16; i < 32; i++) {
-            last16Bytes[i-16] = hash[i];
-        }
-        return BigNumbers.init(last16Bytes);
+        return
+            BigNumbers.init(
+                abi.encodePacked(keccak256(bytes.concat(a, b, c)) >> 128)
+            );
     }
 }
