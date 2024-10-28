@@ -5,18 +5,16 @@ import "forge-std/Test.sol";
 import "../src/VDFPietrzak.sol";
 
 // valid proofs
-import "../test-vdf-files/valid/block_20920622.sol";
-import "../test-vdf-files/valid/block_20920632.sol";
-import "../test-vdf-files/valid/block_20920642.sol";
-import "../test-vdf-files/valid/block_20920652.sol";
-import "../test-vdf-files/valid/block_20920662.sol";
+import "../test-vdf-files/valid/a.sol";
+import "../test-vdf-files/valid/b.sol";
+import "../test-vdf-files/valid/c.sol";
+import "../test-vdf-files/valid/d.sol";
 
 // invalid proofs
-import "../test-vdf-files/invalid/block_20920622.sol";
-import "../test-vdf-files/invalid/block_20920632.sol";
-import "../test-vdf-files/invalid/block_20920642.sol";
-import "../test-vdf-files/invalid/block_20920652.sol";
-import "../test-vdf-files/invalid/block_20920662.sol";
+import "../test-vdf-files/invalid/a.sol";
+import "../test-vdf-files/invalid/b.sol";
+import "../test-vdf-files/invalid/c.sol";
+import "../test-vdf-files/invalid/d.sol";
 
 contract VDFPietrzakTest is Test {
     VDFPietrzak public vdf;
@@ -26,84 +24,68 @@ contract VDFPietrzakTest is Test {
     }
 
     /* valid proofs */
-    function testValidProof_20920622() public view {
-        BigNumber memory x = ValidVDF_20920622.getX();
-        BigNumber memory y = ValidVDF_20920622.getY();
-        BigNumber[] memory v = ValidVDF_20920622.getV();
+    function testValidProof_A() public view {
+        BigNumber memory x = Valid_VDF_A.getX();
+        BigNumber memory y = Valid_VDF_A.getY();
+        BigNumber[] memory v = Valid_VDF_A.getV();
         bool result = vdf.verifyPietrzak(v, x, y);
-        assertTrue(result, string.concat("Block 20920622 - Valid proof failed"));
+        assertTrue(result, string.concat("VDF A - Valid proof failed"));
     }
 
-    function testValidProof_20920632() public view {
-        BigNumber memory x = ValidVDF_20920632.getX();
-        BigNumber memory y = ValidVDF_20920632.getY();
-        BigNumber[] memory v = ValidVDF_20920632.getV();
+    function testValidProof_B() public view {
+        BigNumber memory x = Valid_VDF_B.getX();
+        BigNumber memory y = Valid_VDF_B.getY();
+        BigNumber[] memory v = Valid_VDF_B.getV();
         bool result = vdf.verifyPietrzak(v, x, y);
-        assertTrue(result, string.concat("Block 20920632 - Valid proof failed"));
+        assertTrue(result, string.concat("VDF B - Valid proof failed"));
     }
 
-    function testValidProof_20920642() public view {
-        BigNumber memory x = ValidVDF_20920642.getX();
-        BigNumber memory y = ValidVDF_20920642.getY();
-        BigNumber[] memory v = ValidVDF_20920642.getV();
+    function testValidProof_C() public view {
+        BigNumber memory x = Valid_VDF_C.getX();
+        BigNumber memory y = Valid_VDF_C.getY();
+        BigNumber[] memory v = Valid_VDF_C.getV();
         bool result = vdf.verifyPietrzak(v, x, y);
-        assertTrue(result, string.concat("Block 20920642 - Valid proof failed"));
+        assertTrue(result, string.concat("VDF C - Valid proof failed"));
     }
 
-    function testValidProof_20920652() public view {
-        BigNumber memory x = ValidVDF_20920652.getX();
-        BigNumber memory y = ValidVDF_20920652.getY();
-        BigNumber[] memory v = ValidVDF_20920652.getV();
+    function testValidProof_D() public view {
+        BigNumber memory x = Valid_VDF_D.getX();
+        BigNumber memory y = Valid_VDF_D.getY();
+        BigNumber[] memory v = Valid_VDF_D.getV();
         bool result = vdf.verifyPietrzak(v, x, y);
-        assertTrue(result, string.concat("Block 20920652 - Valid proof failed"));
-    }
-
-    function testValidProof_20920662() public view {
-        BigNumber memory x = ValidVDF_20920662.getX();
-        BigNumber memory y = ValidVDF_20920662.getY();
-        BigNumber[] memory v = ValidVDF_20920662.getV();
-        bool result = vdf.verifyPietrzak(v, x, y);
-        assertTrue(result, string.concat("Block 20920662 - Valid proof failed"));
+        assertTrue(result, string.concat("VDF D - Valid proof failed"));
     }
 
     /* invalid proofs */
-    function testInvalidProof_20920622() public view {
-        BigNumber memory x = InvalidVDF_20920622.getX();
-        BigNumber memory y = InvalidVDF_20920622.getY();
-        BigNumber[] memory v = InvalidVDF_20920622.getV();
+    function testInvalidProof_A() public view {
+        BigNumber memory x = Invalid_VDF_A.getX();
+        BigNumber memory y = Invalid_VDF_A.getY();
+        BigNumber[] memory v = Invalid_VDF_A.getV();
         bool result = vdf.verifyPietrzak(v, x, y);
-        assertFalse(result, string.concat("20920622 - Invalid proof succeeded"));
+        assertFalse(result, string.concat("VDF A - Invalid proof succeeded"));
     }
 
-    function testInvalidProof_20920632() public view {
-        BigNumber memory x = InvalidVDF_20920632.getX();
-        BigNumber memory y = InvalidVDF_20920632.getY();
-        BigNumber[] memory v = InvalidVDF_20920632.getV();
+    function testInvalidProof_B() public view {
+        BigNumber memory x = Invalid_VDF_B.getX();
+        BigNumber memory y = Invalid_VDF_B.getY();
+        BigNumber[] memory v = Invalid_VDF_B.getV();
         bool result = vdf.verifyPietrzak(v, x, y);
-        assertFalse(result, string.concat("20920632 - Invalid proof succeeded"));
+        assertFalse(result, string.concat("VDF B - Invalid proof succeeded"));
     }
 
-    function testInvalidProof_20920642() public view {
-        BigNumber memory x = InvalidVDF_20920642.getX();
-        BigNumber memory y = InvalidVDF_20920642.getY();
-        BigNumber[] memory v = InvalidVDF_20920642.getV();
+    function testInvalidProof_C() public view {
+        BigNumber memory x = Invalid_VDF_C.getX();
+        BigNumber memory y = Invalid_VDF_C.getY();
+        BigNumber[] memory v = Invalid_VDF_C.getV();
         bool result = vdf.verifyPietrzak(v, x, y);
-        assertFalse(result, string.concat("20920642 - Invalid proof succeeded"));
+        assertFalse(result, string.concat("VDF C - Invalid proof succeeded"));
     }
 
-    function testInvalidProof_20920652() public view {
-        BigNumber memory x = InvalidVDF_20920652.getX();
-        BigNumber memory y = InvalidVDF_20920652.getY();
-        BigNumber[] memory v = InvalidVDF_20920652.getV();
+    function testInvalidProof_D() public view {
+        BigNumber memory x = Invalid_VDF_D.getX();
+        BigNumber memory y = Invalid_VDF_D.getY();
+        BigNumber[] memory v = Invalid_VDF_D.getV();
         bool result = vdf.verifyPietrzak(v, x, y);
-        assertFalse(result, string.concat("20920652 - Invalid proof succeeded"));
-    }
-
-    function testInvalidProof_20920662() public view {
-        BigNumber memory x = InvalidVDF_20920662.getX();
-        BigNumber memory y = InvalidVDF_20920662.getY();
-        BigNumber[] memory v = InvalidVDF_20920662.getV();
-        bool result = vdf.verifyPietrzak(v, x, y);
-        assertFalse(result, string.concat("20920662 - Invalid proof succeeded"));
+        assertFalse(result, string.concat("VDF D - Invalid proof succeeded"));
     }
 }

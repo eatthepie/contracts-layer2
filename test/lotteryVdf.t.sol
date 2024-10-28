@@ -4,19 +4,17 @@ pragma solidity ^0.8.25;
 import "forge-std/Test.sol";
 import "../src/Lottery.sol";
 
-// valid vdf proofs
-import "../test-vdf-files/valid/block_20920622.sol";
-import "../test-vdf-files/valid/block_20920632.sol";
-import "../test-vdf-files/valid/block_20920642.sol";
-import "../test-vdf-files/valid/block_20920652.sol";
-import "../test-vdf-files/valid/block_20920662.sol";
+// valid proofs
+import "../test-vdf-files/valid/a.sol";
+import "../test-vdf-files/valid/b.sol";
+import "../test-vdf-files/valid/c.sol";
+import "../test-vdf-files/valid/d.sol";
 
-// invalid vdf proofs
-import "../test-vdf-files/invalid/block_20920622.sol";
-import "../test-vdf-files/invalid/block_20920632.sol";
-import "../test-vdf-files/invalid/block_20920642.sol";
-import "../test-vdf-files/invalid/block_20920652.sol";
-import "../test-vdf-files/invalid/block_20920662.sol";
+// invalid proofs
+import "../test-vdf-files/invalid/a.sol";
+import "../test-vdf-files/invalid/b.sol";
+import "../test-vdf-files/invalid/c.sol";
+import "../test-vdf-files/invalid/d.sol";
 
 contract LotteryVDFTest is Test {
     Lottery public lottery;
@@ -30,7 +28,6 @@ contract LotteryVDFTest is Test {
     VDFProofData[] public vdfProofs;
 
     struct VDFProofData {
-        uint256 blockNumber;
         bytes32 prevrandao;
         uint8 vdfIndex;
     }
@@ -44,33 +41,23 @@ contract LotteryVDFTest is Test {
 
         // load valid proofs
         vdfProofs.push(VDFProofData({
-            blockNumber: 20920622,
-            prevrandao: bytes32(uint256(51049764388387882260001832746320922162275278963975484447753639501411130604681)),
+            prevrandao: bytes32(uint256(65305838511507767948894108466576998214933764930710580223742911944647654807690)),
             vdfIndex: 0
         }));
 
         vdfProofs.push(VDFProofData({
-            blockNumber: 20920632,
-            prevrandao: bytes32(uint256(114647039150845253957106505659935793700741113189057202690540750438316827384848)),
+            prevrandao: bytes32(uint256(51049764388387882260001832746320922162275278963975484447753639501411130604681)),
             vdfIndex: 1
         }));
 
         vdfProofs.push(VDFProofData({
-            blockNumber: 20920642,
             prevrandao: bytes32(uint256(2656751508725187512486344122081204096368588122458517885621621007542366135775)),
             vdfIndex: 2
         }));
 
         vdfProofs.push(VDFProofData({
-            blockNumber: 20920652,
             prevrandao: bytes32(uint256(96618837226557606533137319610808329371780981598490822395441686749465502125142)),
             vdfIndex: 3
-        }));
-
-        vdfProofs.push(VDFProofData({
-            blockNumber: 20920662,
-            prevrandao: bytes32(uint256(51434773657427415913027395301743798367869859907808600986758584585820106414285)),
-            vdfIndex: 4
         }));
     }
 
@@ -314,38 +301,34 @@ contract LotteryVDFTest is Test {
 
     // helper functions
     function getValidY(uint8 index) internal pure returns (BigNumber memory) {
-        if (index == 0) return ValidVDF_20920622.getY();
-        if (index == 1) return ValidVDF_20920632.getY();
-        if (index == 2) return ValidVDF_20920642.getY();
-        if (index == 3) return ValidVDF_20920652.getY();
-        if (index == 4) return ValidVDF_20920662.getY();
+        if (index == 0) return Valid_VDF_A.getY();
+        if (index == 1) return Valid_VDF_B.getY();
+        if (index == 2) return Valid_VDF_C.getY();
+        if (index == 3) return Valid_VDF_D.getY();
         revert("Invalid VDF index");
     }
 
     function getValidV(uint8 index) internal pure returns (BigNumber[] memory) {
-        if (index == 0) return ValidVDF_20920622.getV();
-        if (index == 1) return ValidVDF_20920632.getV();
-        if (index == 2) return ValidVDF_20920642.getV();
-        if (index == 3) return ValidVDF_20920652.getV();
-        if (index == 4) return ValidVDF_20920662.getV();
+        if (index == 0) return Valid_VDF_A.getV();
+        if (index == 1) return Valid_VDF_B.getV();
+        if (index == 2) return Valid_VDF_C.getV();
+        if (index == 3) return Valid_VDF_D.getV();
         revert("Invalid VDF index");
     }
 
     function getInvalidY(uint8 index) internal pure returns (BigNumber memory) {
-        if (index == 0) return InvalidVDF_20920622.getY();
-        if (index == 1) return InvalidVDF_20920632.getY();
-        if (index == 2) return InvalidVDF_20920642.getY();
-        if (index == 3) return InvalidVDF_20920652.getY();
-        if (index == 4) return InvalidVDF_20920662.getY();
+        if (index == 0) return Invalid_VDF_A.getY();
+        if (index == 1) return Invalid_VDF_B.getY();
+        if (index == 2) return Invalid_VDF_C.getY();
+        if (index == 3) return Invalid_VDF_D.getY();
         revert("Invalid VDF index");
     }
 
     function getInvalidV(uint8 index) internal pure returns (BigNumber[] memory) {
-        if (index == 0) return InvalidVDF_20920622.getV();
-        if (index == 1) return InvalidVDF_20920632.getV();
-        if (index == 2) return InvalidVDF_20920642.getV();
-        if (index == 3) return InvalidVDF_20920652.getV();
-        if (index == 4) return InvalidVDF_20920662.getV();
+        if (index == 0) return Invalid_VDF_A.getV();
+        if (index == 1) return Invalid_VDF_B.getV();
+        if (index == 2) return Invalid_VDF_C.getV();
+        if (index == 3) return Invalid_VDF_D.getV();
         revert("Invalid VDF index");
     }
 
