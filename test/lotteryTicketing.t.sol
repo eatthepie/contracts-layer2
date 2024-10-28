@@ -100,7 +100,7 @@ contract LotteryTicketingTest is Test {
 
     function testBuyTicketInvalidEtherball() public {
         uint256[4][] memory tickets = new uint256[4][](1);
-        tickets[0] = [uint256(1), uint256(2), uint256(3), uint256(6)]; // Assuming max etherball is 5 for Easy difficulty
+        tickets[0] = [uint256(1), uint256(2), uint256(3), uint256(11)];
 
         vm.deal(player, 1 ether);
         vm.prank(player);

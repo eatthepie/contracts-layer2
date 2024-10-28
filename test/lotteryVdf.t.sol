@@ -349,11 +349,11 @@ contract LotteryVDFTest is Test {
 
     function getDifficultyParams(Lottery.Difficulty difficulty) internal pure returns (uint256 maxNumber, uint256 maxEtherball) {
         if (difficulty == Lottery.Difficulty.Easy) {
-            return (50, 5);
+            return (25, 10);
         } else if (difficulty == Lottery.Difficulty.Medium) {
-            return (100, 10);
+            return (50, 10);
         } else {
-            return (150, 15);
+            return (75, 10);
         }
     }
 }

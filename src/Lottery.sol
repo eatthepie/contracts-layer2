@@ -67,12 +67,12 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant BRONZE_PLACE_PERCENTAGE = 1400;
     uint256 public constant FEE_PERCENTAGE = 100;
     uint256 public constant FEE_MAX_IN_ETH = 100 ether;
-    uint256 public constant EASY_MAX = 50;
-    uint256 public constant EASY_ETHERBALL_MAX = 5;
-    uint256 public constant MEDIUM_MAX = 100;
+    uint256 public constant EASY_MAX = 25;
+    uint256 public constant EASY_ETHERBALL_MAX = 10;
+    uint256 public constant MEDIUM_MAX = 50;
     uint256 public constant MEDIUM_ETHERBALL_MAX = 10;
-    uint256 public constant HARD_MAX = 150;
-    uint256 public constant HARD_ETHERBALL_MAX = 15;
+    uint256 public constant HARD_MAX = 75;
+    uint256 public constant HARD_ETHERBALL_MAX = 10;
     uint256 public constant DRAW_MIN_PRIZE_POOL = 500 ether;
     uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
     uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // ~4 epoch delay 
