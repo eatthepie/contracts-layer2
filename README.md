@@ -4,6 +4,13 @@
 
 This repository contains all smart contracts running [Eat The Pie](https://www.eatthepie.xyz), the world lottery on Ethereum.
 
+## 📝 Deployed Contracts
+
+| Network | Address                                      |
+| ------- | -------------------------------------------- |
+| Mainnet | `0x043c9ae2764B5a7c2d685bc0262F8cF2f6D86008` |
+| Sepolia | `0x44B340051a31D216f83428B447DBa2C102DFF373` |
+
 ## Project Structure 📂
 
 - `script/`: Deployment scripts
@@ -91,7 +98,7 @@ forge test --match-path test/[TestFileName].t.sol
 
 ## Documentation 📚
 
-For detailed information about the smart contracts and how they work, please visit the [in-depth documentation](https://docs.eatthepie.xyz).
+For detailed information about the smart contracts and how they work, please visit [docs.eatthepie.xyz](https://docs.eatthepie.xyz).
 
 ## License 📜
 
