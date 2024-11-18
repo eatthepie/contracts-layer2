@@ -330,8 +330,9 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(gameDrawInitiated[gameNumber], "Draw not initiated for this game");
         require(block.number >= gameRandomBlock[gameNumber], "Buffer period not yet passed");
         require(gameRandomValue[gameNumber] == 0, "Random has already been set");
-        gameRandomValue[gameNumber] = block.prevrandao;
-        emit RandomSet(gameNumber, block.prevrandao);
+        uint256 randomValue = uint256(blockhash(block.number - 1));
+        gameRandomValue[gameNumber] = randomValue;
+        emit RandomSet(gameNumber, randomValue);
     }
 
     /**
