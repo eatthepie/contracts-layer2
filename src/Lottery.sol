@@ -16,9 +16,15 @@ import "./NFTPrize.sol";
     ███████╗██║  ██║   ██║          ██║   ██║  ██║███████╗    ██║     ██║███████╗
     ╚══════╝╚═╝  ╚═╝   ╚═╝          ╚═╝   ╚═╝  ╚═╝╚══════╝    ╚═╝     ╚═╝╚══════╝
 
- * @title EatThePie Lottery
+ * @title EatThePie Layer 2 Lottery
  * @dev Implements a decentralized lottery system with VDF-based randomness and NFT prizes
+ * @notice This is the Layer 2 implementation of the EatThePie lottery system
+ * 
+ * @custom:differences Differences from Layer 1 implementation (https://github.com/eatthepie/contracts):
+ * 1. Randomness Source: Uses blockhash instead of prevrandao for VDFs
+ * 2. Payment Method: Implements ERC20 token purchase instead of ETHER
  */
+
 contract Lottery is Ownable, ReentrancyGuard {
     using BigNumbers for BigNumber;
 
