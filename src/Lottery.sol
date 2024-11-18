@@ -25,6 +25,32 @@ import "./NFTPrize.sol";
  * 2. Payment Method: Implements ERC20 token purchase instead of ETHER
  */
 
+// Permit2 interfaces
+interface IPermit2 {
+    struct TokenPermissions {
+        address token;
+        uint256 amount;
+    }
+
+    struct PermitTransferFrom {
+        TokenPermissions permitted;
+        uint256 nonce;
+        uint256 deadline;
+    }
+
+    struct SignatureTransferDetails {
+        address to;
+        uint256 requestedAmount;
+    }
+
+    function permitTransferFrom(
+        PermitTransferFrom calldata permit,
+        SignatureTransferDetails calldata transferDetails,
+        address owner,
+        bytes calldata signature
+    ) external;
+}
+
 contract Lottery is Ownable, ReentrancyGuard {
     using BigNumbers for BigNumber;
 
@@ -62,6 +88,11 @@ contract Lottery is Ownable, ReentrancyGuard {
         uint256[3] payouts;
     }
 
+    // L2 Specific - ERC20 token for payments
+    IERC20 public immutable paymentToken;
+    IPermit2 public immutable permit2;
+    address public constant PERMIT2_ADDRESS = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+
     // Contracts
     VDFPietrzak public vdfContract;
     NFTPrize public immutable nftPrize;
@@ -72,14 +103,14 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant SILVER_PLACE_PERCENTAGE = 2500;
     uint256 public constant BRONZE_PLACE_PERCENTAGE = 1400;
     uint256 public constant FEE_PERCENTAGE = 100;
-    uint256 public constant FEE_MAX_IN_ETH = 100 ether;
+    uint256 public constant FEE_MAX_IN_ETH = 100000 * 1e18;
     uint256 public constant EASY_MAX = 25;
     uint256 public constant EASY_ETHERBALL_MAX = 10;
     uint256 public constant MEDIUM_MAX = 50;
     uint256 public constant MEDIUM_ETHERBALL_MAX = 10;
     uint256 public constant HARD_MAX = 75;
     uint256 public constant HARD_ETHERBALL_MAX = 10;
-    uint256 public constant DRAW_MIN_PRIZE_POOL = 500 ether;
+    uint256 public constant DRAW_MIN_PRIZE_POOL = 500000 * 1e18;
     uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
     uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // ~4 epoch delay 
 
@@ -137,25 +168,42 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param _nftPrizeAddress Address of the NFTPrize contract
      * @param _feeRecipient Address to receive fees
      */
-    constructor(address _vdfContractAddress, address _nftPrizeAddress, address _feeRecipient) Ownable(msg.sender) {
+    constructor(address _vdfContractAddress, address _nftPrizeAddress, address _feeRecipient, address _paymentToken) Ownable(msg.sender) {
         vdfContract = VDFPietrzak(_vdfContractAddress);
         nftPrize = NFTPrize(_nftPrizeAddress);
-        ticketPrice = 0.1 ether;
+        ticketPrice = 1 * 1e18; // 1 token
         currentGameNumber = 1;
         gameDifficulty[currentGameNumber] = Difficulty.Easy;
         gameStartBlock[currentGameNumber] = block.number;
         lastDrawTime = block.timestamp;
         feeRecipient = _feeRecipient;
+        paymentToken = IERC20(_paymentToken);
+        permit2 = IPermit2(PERMIT2_ADDRESS);
     }
 
     /**
-     * @dev Allows users to buy multiple lottery tickets (100 max)
+     * @dev Allows users to buy multiple lottery tickets using Permit2 (100 max)
      * @param tickets Array of ticket numbers (4 numbers per ticket)
+     * @param permit The Permit2 permission structure
+     * @param signature The signature for the Permit2 transfer
      */
-    function buyTickets(uint256[4][] calldata tickets) external payable nonReentrant {
+    function buyTickets(uint256[4][] calldata tickets, IPermit2.PermitTransferFrom calldata permit, bytes calldata signature) external payable nonReentrant {
         uint256 ticketCount = tickets.length;
         require(ticketCount > 0 && ticketCount <= 100, "Invalid ticket count");
-        require(msg.value == ticketPrice * ticketCount, "Incorrect total price");
+
+        uint256 totalCost = ticketPrice * ticketCount;
+        require(permit.permitted.amount >= totalCost, "Insufficient permit amount");
+
+        // Execute the Permit2 transfer
+        permit2.permitTransferFrom(
+            permit,
+            IPermit2.SignatureTransferDetails({
+                to: address(this),
+                requestedAmount: totalCost
+            }),
+            msg.sender,
+            signature
+        );
 
         uint256 gameNum = currentGameNumber;
         address player = msg.sender;
@@ -629,8 +677,7 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param fee The amount of fee to send
      */
     function _sendFee(uint256 fee) internal {
-        (bool success, ) = payable(feeRecipient).call{value: fee}("");
-        require(success, "Fee transfer failed");
+        require(paymentToken.transfer(feeRecipient, fee), "Fee transfer failed");
     }
 
     /**
@@ -689,8 +736,7 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param amount The amount of the prize
      */
     function _sendPrize(address winner, uint256 amount) internal {
-        (bool success, ) = payable(winner).call{value: amount}("");
-        require(success, "Prize transfer failed");
+        require(paymentToken.transfer(winner, amount), "Prize transfer failed");
     }
 
     /**
@@ -992,12 +1038,5 @@ contract Lottery is Ownable, ReentrancyGuard {
         if (bitlen == 0) {
             bitlen = 1;
         }
-    }
-
-    /**
-     * @dev Fallback function to receive ETH and add it to the prize pool
-     */
-    receive() external payable {
-        gamePrizePool[currentGameNumber] += msg.value;
     }
 }
