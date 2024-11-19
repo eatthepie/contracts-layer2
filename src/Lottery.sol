@@ -3,7 +3,7 @@ pragma solidity 0.8.25;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./libraries/PietrzakLibrary.sol";
 import "./VDFPietrzak.sol";
 import "./NFTPrize.sol";
@@ -103,14 +103,14 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant SILVER_PLACE_PERCENTAGE = 2500;
     uint256 public constant BRONZE_PLACE_PERCENTAGE = 1400;
     uint256 public constant FEE_PERCENTAGE = 100;
-    uint256 public constant FEE_MAX_IN_ETH = 100000 * 1e18;
+    uint256 public constant FEE_MAX_IN_TOKENS = 1000000 * 1e18;
     uint256 public constant EASY_MAX = 25;
     uint256 public constant EASY_ETHERBALL_MAX = 10;
     uint256 public constant MEDIUM_MAX = 50;
     uint256 public constant MEDIUM_ETHERBALL_MAX = 10;
     uint256 public constant HARD_MAX = 75;
     uint256 public constant HARD_ETHERBALL_MAX = 10;
-    uint256 public constant DRAW_MIN_PRIZE_POOL = 500000 * 1e18;
+    uint256 public constant DRAW_MIN_PRIZE_POOL = 100000 * 1e18;
     uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
     uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // ~4 epoch delay 
 
@@ -187,7 +187,7 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param permit The Permit2 permission structure
      * @param signature The signature for the Permit2 transfer
      */
-    function buyTickets(uint256[4][] calldata tickets, IPermit2.PermitTransferFrom calldata permit, bytes calldata signature) external payable nonReentrant {
+    function buyTickets(uint256[4][] calldata tickets, IPermit2.PermitTransferFrom calldata permit, bytes calldata signature) external nonReentrant {
         uint256 ticketCount = tickets.length;
         require(ticketCount > 0 && ticketCount <= 100, "Invalid ticket count");
 
@@ -209,7 +209,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         address player = msg.sender;
 
         unchecked {
-            gamePrizePool[gameNum] += msg.value;
+            gamePrizePool[gameNum] += totalCost;
             playerTicketCount[player][gameNum] += ticketCount;
         }
 
@@ -547,9 +547,9 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @return The adjusted fee amount
      */
     function _handleExcessFee(uint256 fee) internal returns (uint256) {
-        if (fee > FEE_MAX_IN_ETH) {
-            uint256 excessFee = fee - FEE_MAX_IN_ETH;
-            fee = FEE_MAX_IN_ETH;
+        if (fee > FEE_MAX_IN_TOKENS) {
+            uint256 excessFee = fee - FEE_MAX_IN_TOKENS;
+            fee = FEE_MAX_IN_TOKENS;
             gamePrizePool[currentGameNumber] += excessFee;
         }
         return fee;
