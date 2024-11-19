@@ -13,6 +13,7 @@ contract DeployLottery is Script {
 
         // FEE RECIPIENT
         address feeRecipient = address(0x123);
+        address paymentToken = address(0x123);
 
         // VDF Contract
         VDFPietrzak vdfContract = new VDFPietrzak();
@@ -26,7 +27,8 @@ contract DeployLottery is Script {
         Lottery lotteryContract = new Lottery(
             address(vdfContract),
             address(nftContract),
-            feeRecipient
+            feeRecipient,
+            paymentToken
         );
 
         // Set Lottery Contract in NFT Contract

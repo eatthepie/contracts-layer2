@@ -1,8 +1,15 @@
 ![Eat The Pie](https://github.com/eatthepie/docs/blob/main/static/img/header.png)
 
-# Eat The Pie Smart Contracts
+> ⚠️ **Layer 2 Fork Notice**
+>
+> This repository contains a modified version of the [original Eat The Pie contracts](https://github.com/eatthepie/contracts). Key differences in this L2 implementation:
+>
+> 1. Randomness Source: Uses blockhash instead of prevrandao for VDFs
+> 2. Payment Method: Implements ERC20 token purchase instead of ETHER
 
-This repository contains all smart contracts running [Eat The Pie](https://www.eatthepie.xyz), the world lottery on Ethereum.
+# Eat The Pie Layer 2 Smart Contracts
+
+This repository contains all smart contracts running [Eat The Pie](https://www.eatthepie.xyz), the world lottery on Layer 2.
 
 ## Project Structure 📂
 
@@ -19,22 +26,6 @@ This repository contains all smart contracts running [Eat The Pie](https://www.e
   - `Lottery.sol`: Main lottery contract
   - `NFTPrize.sol`: NFT prize contract
   - `VDFPietrzak.sol`: Verifiable Delay Function implementation
-
-- `test/`: Test files
-
-  - `mocks/`: Mock contracts for testing
-  - Test files:
-    - `lotteryBasic.t.sol`: Basic lottery functionality tests
-    - `lotteryClaims.t.sol`: Prize claiming tests
-    - `lotteryDrawing.t.sol`: Lottery drawing process tests
-    - `lotteryPayouts.t.sol`: Payout mechanism tests
-    - `lotteryTicketing.t.sol`: Ticket purchase and management tests
-    - `lotteryVdf.t.sol`: VDF integration tests
-    - `vdf.t.sol`: Standalone VDF tests
-
-- `test-vdf-files/`: VDF test files
-  - `invalid/`: Invalid VDF test cases
-  - `valid/`: Valid VDF test cases
 
 ## Setup
 
@@ -91,10 +82,10 @@ forge test --match-path test/[TestFileName].t.sol
 
 ## 📝 Deployed Contracts
 
-| Network | Address                                      |
-| ------- | -------------------------------------------- |
-| Mainnet | `0x043c9ae2764B5a7c2d685bc0262F8cF2f6D86008` |
-| Sepolia | `0x44B340051a31D216f83428B447DBa2C102DFF373` |
+| Network             | Address                                      |
+| ------------------- | -------------------------------------------- |
+| World Chain         | `0xB3406E515b7fA46c0Ba0E8A65e15D459A44E2de4` |
+| World Chain Sepolia | `0x78334Ea7df16a582cc98980d79D6271c42f9ef81` |
 
 ## Documentation 📚
 
