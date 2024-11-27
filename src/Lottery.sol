@@ -110,8 +110,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant MEDIUM_ETHERBALL_MAX = 10;
     uint256 public constant HARD_MAX = 75;
     uint256 public constant HARD_ETHERBALL_MAX = 10;
-    uint256 public constant DRAW_MIN_PRIZE_POOL = 100000 * 1e18;
-    uint256 public constant DRAW_MIN_TIME_PERIOD = 1 weeks;
+    uint256 public constant DRAW_MIN_TIME_PERIOD = 4 days;
     uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // ~4 epoch delay 
 
     // State variables
@@ -329,7 +328,6 @@ contract Lottery is Ownable, ReentrancyGuard {
     function initiateDraw() external nonReentrant {
         require(!gameDrawInitiated[currentGameNumber], "Draw already initiated for current game");
         require(block.timestamp >= lastDrawTime + DRAW_MIN_TIME_PERIOD, "Time interval not passed");
-        require(gamePrizePool[currentGameNumber] >= DRAW_MIN_PRIZE_POOL, "Insufficient prize pool");
 
         lastDrawTime = block.timestamp;
         gameDrawInitiated[currentGameNumber] = true;
