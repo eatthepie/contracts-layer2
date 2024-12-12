@@ -84,7 +84,7 @@ forge test --match-path test/[TestFileName].t.sol
 
 | Network             | Address                                      |
 | ------------------- | -------------------------------------------- |
-| World Chain         | `0xB3406E515b7fA46c0Ba0E8A65e15D459A44E2de4` |
+| World Chain         | `0x44B340051a31D216f83428B447DBa2C102DFF373` |
 | World Chain Sepolia | `0x78334Ea7df16a582cc98980d79D6271c42f9ef81` |
 
 ## Documentation 📚
