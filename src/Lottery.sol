@@ -4,8 +4,7 @@ pragma solidity 0.8.25;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./libraries/PietrzakLibrary.sol";
-import "./VDFPietrzak.sol";
+import "witnet-solidity-bridge/contracts/interfaces/IWitnetRandomness.sol";
 import "./NFTPrize.sol";
 
 /**
@@ -16,13 +15,9 @@ import "./NFTPrize.sol";
     ███████╗██║  ██║   ██║          ██║   ██║  ██║███████╗    ██║     ██║███████╗
     ╚══════╝╚═╝  ╚═╝   ╚═╝          ╚═╝   ╚═╝  ╚═╝╚══════╝    ╚═╝     ╚═╝╚══════╝
 
- * @title EatThePie Layer 2 Lottery
- * @dev Implements a decentralized lottery system with VDF-based randomness and NFT prizes
- * @notice This is the Layer 2 implementation of the EatThePie lottery system
- * 
- * @custom:differences Differences from Layer 1 implementation (https://github.com/eatthepie/contracts):
- * 1. Randomness Source: Uses blockhash instead of prevrandao for VDFs
- * 2. Payment Method: Implements ERC20 token purchase instead of ETHER
+ * @title EatThePie Layer 2 Lottery V2
+ * @dev Implements a decentralized lottery system with witnet randomness and NFT prizes
+ *
  */
 
 // Permit2 interfaces
@@ -94,7 +89,6 @@ contract Lottery is Ownable, ReentrancyGuard {
     address public constant PERMIT2_ADDRESS = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     // Contracts
-    VDFPietrzak public vdfContract;
     NFTPrize public immutable nftPrize;
 
     // Constants
@@ -124,8 +118,11 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public newDifficultyGame;
     uint256 public newTicketPrice;
     uint256 public newTicketPriceGameNumber;
-    address public newVDFContract;
-    uint256 public newVDFContractGameNumber;
+    bool public gameStopped;
+
+    // Witnet randomness
+    IWitnetRandomness public immutable witnet;
+    mapping(uint256 => uint256) public gameRandomizingBlock;
 
     // Mappings
     mapping(uint256 => uint256) public gameStartBlock;
@@ -140,18 +137,19 @@ contract Lottery is Ownable, ReentrancyGuard {
     mapping(uint256 => bool) public gameDrawInitiated;
     mapping(uint256 => uint256) public gameRandomValue;
     mapping(uint256 => uint256) public gameRandomBlock;
-    mapping(uint256 => bool) public gameVDFValid;
     mapping(uint256 => bool) public gameDrawCompleted;
     mapping(uint256 => mapping(address => bool)) public prizesClaimed;
     mapping(uint256 => uint256) public gameDrawnBlock;
     mapping(uint256 => mapping(address => bool)) public hasClaimedNFT;
+
+    mapping(uint256 => bool) public gameRefundsEnabled;
+    mapping(uint256 => mapping(address => bool)) public hasRefunded;
 
     // Events
     event TicketPurchased(address indexed player, uint256 gameNumber, uint256[3] numbers, uint256 etherball);
     event TicketsPurchased(address indexed player, uint256 gameNumber, uint256 ticketCount);
     event DrawInitiated(uint256 gameNumber, uint256 targetSetBlock);
     event RandomSet(uint256 gameNumber, uint256 random);
-    event VDFProofSubmitted(address indexed submitter, uint256 gameNumber);
     event WinningNumbersSet(uint256 indexed gameNumber, uint256 number1, uint256 number2, uint256 number3, uint256 etherball);
     event DifficultyChanged(uint256 gameNumber, Difficulty newDifficulty);
     event TicketPriceChangeScheduled(uint256 newPrice, uint256 effectiveGameNumber);
@@ -160,15 +158,20 @@ contract Lottery is Ownable, ReentrancyGuard {
     event FeeRecipientChanged(address newFeeRecipient);
     event PrizeClaimed(uint256 gameNumber, address player, uint256 amount);
     event NFTMinted(address indexed winner, uint256 indexed tokenId, uint256 indexed gameNumber);
+    event GameStopped(uint256 gameNumber);
+    event GameRefundsEnabled(uint256 gameNumber);
+    event TicketsRefunded(address player, uint256 gameNumber, uint256 amount);
 
     /**
      * @dev Constructor to initialize the Lottery contract
-     * @param _vdfContractAddress Address of the VDFPietrzak contract
+     * @param _witnetRandomness Address of the WitnetRandomness contract
      * @param _nftPrizeAddress Address of the NFTPrize contract
      * @param _feeRecipient Address to receive fees
+     * @param _paymentToken Address of the payment token
      */
-    constructor(address _vdfContractAddress, address _nftPrizeAddress, address _feeRecipient, address _paymentToken) Ownable(msg.sender) {
-        vdfContract = VDFPietrzak(_vdfContractAddress);
+    constructor(IWitnetRandomness _witnetRandomness, address _nftPrizeAddress, address _feeRecipient, address _paymentToken) Ownable(msg.sender) {
+        require(address(_witnetRandomness) != address(0), "Invalid Witnet address");
+        witnet = _witnetRandomness;
         nftPrize = NFTPrize(_nftPrizeAddress);
         ticketPrice = 1 * 1e18; // 1 token
         currentGameNumber = 1;
@@ -187,6 +190,7 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param signature The signature for the Permit2 transfer
      */
     function buyTickets(uint256[4][] calldata tickets, IPermit2.PermitTransferFrom calldata permit, bytes calldata signature) external nonReentrant {
+        require(!gameStopped, "Game is stopped");
         uint256 ticketCount = tickets.length;
         require(ticketCount > 0 && ticketCount <= 100, "Invalid ticket count");
 
@@ -325,16 +329,21 @@ contract Lottery is Ownable, ReentrancyGuard {
     /**
      * @dev Initiates the lottery draw process
      */
-    function initiateDraw() external nonReentrant {
+    function initiateDraw() external payable nonReentrant {
         require(!gameDrawInitiated[currentGameNumber], "Draw already initiated for current game");
         require(block.timestamp >= lastDrawTime + DRAW_MIN_TIME_PERIOD, "Time interval not passed");
 
         lastDrawTime = block.timestamp;
         gameDrawInitiated[currentGameNumber] = true;
 
-        uint256 targetSetBlock = block.number + DRAW_DELAY_SECURITY_BUFFER;
-        require(targetSetBlock > block.number, "Invalid target block");
-        gameRandomBlock[currentGameNumber] = targetSetBlock;
+        // Request randomness from Witnet
+        gameRandomizingBlock[currentGameNumber] = block.number;
+        uint256 usedFunds = witnet.randomize{value: msg.value}();
+
+        // Refund excess payment
+        if (usedFunds < msg.value) {
+            payable(msg.sender).transfer(msg.value - usedFunds);
+        }
 
         _startNextGame();
 
@@ -361,58 +370,35 @@ contract Lottery is Ownable, ReentrancyGuard {
             ticketPrice = newTicketPrice;
             newTicketPrice = 0;
         }
-
-        if (newVDFContract != address(0) && newVDFContractGameNumber == currentGameNumber) {
-            vdfContract = VDFPietrzak(newVDFContract);
-            newVDFContract = address(0);
-        }
     }
 
     /**
      * @dev Sets the random value for a given game
      * @param gameNumber The game number to set the random value for
      */
-    function setRandom(uint256 gameNumber) external {
+    function setRandomAndWinningNumbers(uint256 gameNumber) external {
         require(gameDrawInitiated[gameNumber], "Draw not initiated for this game");
-        require(block.number >= gameRandomBlock[gameNumber], "Buffer period not yet passed");
         require(gameRandomValue[gameNumber] == 0, "Random has already been set");
-        uint256 randomValue = uint256(blockhash(block.number - 1));
+        require(gameRandomizingBlock[gameNumber] > 0, "Randomization not requested");
+
+        // Fetch randomness from Witnet
+        bytes32 randomness = witnet.getRandomnessAfter(gameRandomizingBlock[gameNumber]);
+        uint256 randomValue = uint256(randomness);
         gameRandomValue[gameNumber] = randomValue;
-        emit RandomSet(gameNumber, randomValue);
+
+        _setWinningNumbers(gameNumber, randomness);
     }
 
     /**
-     * @dev Submits and verifies the VDF proof for a given game
-     * @param gameNumber The game number to submit the proof for
-     * @param v Array of BigNumber values for VDF verification
-     * @param y The final output of the VDF
-     */
-    function submitVDFProof(uint256 gameNumber, BigNumber[] memory v, BigNumber memory y) external nonReentrant {
-        require(gameRandomValue[gameNumber] != 0, "Random value not set for this game");
-        require(!gameVDFValid[gameNumber], "VDF proof already submitted for this game");
-
-        // VDF Verification
-        (bytes memory val, uint256 bitlen) = uint256ToBigNumber(gameRandomValue[gameNumber]);
-        BigNumber memory x = BigNumber({val: val, bitlen: bitlen});
-
-        bool isValid = vdfContract.verifyPietrzak(v, x, y);
-        require(isValid, "Invalid VDF proof");
-
-        gameVDFValid[gameNumber] = true;
-        _setWinningNumbers(gameNumber, y.val);
-        emit VDFProofSubmitted(msg.sender, gameNumber);
-    }
-
-    /**
-     * @dev Sets the winning numbers for a given game based on VDF output
+     * @dev Sets the winning numbers for a given game based on randomness
      * @param gameNumber The game number to set winning numbers for
-     * @param vdfOutput The output of the VDF function
+     * @param randomness The randomness value from Witnet
      */
-    function _setWinningNumbers(uint256 gameNumber, bytes memory vdfOutput) internal {
+    function _setWinningNumbers(uint256 gameNumber, uint256 randomness) internal {
         Difficulty difficulty = gameDifficulty[gameNumber];
         (uint256 maxNumber, uint256 maxEtherball) = _getDifficultyParams(difficulty);
 
-        bytes32 randomSeed = keccak256(vdfOutput);
+        bytes32 randomSeed = bytes32(randomness);
         uint256[4] memory winningNumbers;
 
         for (uint256 i = 0; i < 4; i++) {
@@ -446,66 +432,16 @@ contract Lottery is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Verifies the VDF proof for a past game
-     * @param gameNumber The game number to verify
-     * @param v Array of BigNumber values for VDF verification
-     * @param y The final output of the VDF
-     * @return calculatedNumbers The calculated winning numbers
-     * @return isValid Whether the proof is valid
-     */
-    function verifyPastGameVDF(
-        uint256 gameNumber, 
-        BigNumber[] memory v, 
-        BigNumber memory y
-    ) external view returns (uint256[4] memory calculatedNumbers, bool isValid) {
-        require(gameNumber < currentGameNumber, "Game has not ended yet");
-        require(gameRandomValue[gameNumber] != 0, "Random value not set for this game");
-
-        (bytes memory val, uint256 bitlen) = uint256ToBigNumber(gameRandomValue[gameNumber]);
-        BigNumber memory x = BigNumber({val: val, bitlen: bitlen});
-        isValid = vdfContract.verifyPietrzak(v, x, y);
-
-        if (!isValid) {
-            return (calculatedNumbers, false);
-        }
-
-        Difficulty difficulty = gameDifficulty[gameNumber];
-        (uint256 maxNumber, uint256 maxEtherball) = _getDifficultyParams(difficulty);
-
-        bytes32 randomSeed = keccak256(y.val);
-
-        for (uint256 i = 0; i < 4; i++) {
-            uint256 maxValue = i < 3 ? maxNumber : maxEtherball;
-            calculatedNumbers[i] = _generateUnbiasedRandomNumber(randomSeed, i, maxValue);
-        }
-
-        uint32 packedCalculated = uint32(
-            (calculatedNumbers[0] << 24) |
-            (calculatedNumbers[1] << 16) |
-            (calculatedNumbers[2] << 8) |
-            calculatedNumbers[3]
-        );
-
-        uint32 packedStored = uint32(
-            (gameWinningNumbers[gameNumber][0] << 24) |
-            (gameWinningNumbers[gameNumber][1] << 16) |
-            (gameWinningNumbers[gameNumber][2] << 8) |
-            gameWinningNumbers[gameNumber][3]
-        );
-
-        isValid = packedCalculated == packedStored;
-        return (calculatedNumbers, isValid);
-    }
-
-    /**
      * @dev Calculates and sets the payouts for a given game
      * @param gameNumber The game number to calculate payouts for
      */
     function calculatePayouts(uint256 gameNumber) external nonReentrant {
-        require(gameVDFValid[gameNumber], "VDF proof not yet validated for this game");
         require(gameDrawCompleted[gameNumber] != true, "Payouts already calculated for this game");
+        require(gameWinningNumbers[gameNumber][0] != 0, "Winning numbers not set");
 
         uint256 prizePool = gamePrizePool[gameNumber];
+        require(prizePool > 0, "No prize pool exists for this game");
+
         (uint256 goldPrize, uint256 silverPrize, uint256 bronzePrize, uint256 fee) = _calculatePrizes(prizePool);
 
         fee = _handleExcessFee(fee);
@@ -992,16 +928,6 @@ contract Lottery is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Sets a new VDF contract address (owner only)
-     * @param _newVDFContract The address of the new VDF contract
-     */
-    function setNewVDFContract(address _newVDFContract) external onlyOwner {
-        require(_newVDFContract != address(0) && _newVDFContract != address(vdfContract), "Invalid VDF contract address");
-        newVDFContract = _newVDFContract;
-        newVDFContractGameNumber = currentGameNumber + 10;
-    }
-
-    /**
      * @dev Sets a new fee recipient address (owner only)
      * @param _newFeeRecipient The address of the new fee recipient
      */
@@ -1012,29 +938,42 @@ contract Lottery is Ownable, ReentrancyGuard {
     }
 
     /**
-    * @dev Converts a uint256 to a BigNumber input format used in VDF function.
-    * 
-    * @param input The uint256 value to be converted
-    * @return val The byte array representation of the input
-    * @return bitlen The bit length of the significant part of the input
-    */
-    function uint256ToBigNumber(uint256 input) public pure returns (bytes memory val, uint256 bitlen) {
-        // Convert the input to a byte array
-        val = abi.encodePacked(input);
+     * @dev Emergency stop of the specified game and enable refunds (owner only)
+     * @param targetGame The game to stop (current or next game)
+     */
+    function stopGameAndEnableRefunds(uint256 targetGame) external onlyOwner {
+        require(!gameStopped, "Game already stopped");
+        require(targetGame == currentGameNumber || targetGame == currentGameNumber + 1, "Can only stop current or next game");
         
-        // Initialize bitlen to the maximum possible for uint256
-        bitlen = 256;
-
-        // Count leading zero bytes to determine the actual bit length
-        uint256 i = 0;
-        while (i < 32 && val[i] == 0) {
-            bitlen -= 8;  // Decrease bitlen by 8 for each leading zero byte
-            i++;
+        if (targetGame == currentGameNumber) {
+            require(!gameDrawInitiated[currentGameNumber], "Draw already initiated");
         }
+        
+        gameStopped = true;
+        gameRefundsEnabled[targetGame] = true;
+        
+        emit GameStopped(targetGame);
+        emit GameRefundsEnabled(targetGame);
+    }
 
-        // Ensure bitlen is at least 1, even for input 0
-        if (bitlen == 0) {
-            bitlen = 1;
-        }
+    /**
+     * @dev Allow players to refund their tickets for a stopped game
+     * @param gameNumber The game number to refund tickets for
+     */
+    function refundTickets(uint256 gameNumber) external nonReentrant {
+        require(gameRefundsEnabled[gameNumber], "Refunds not enabled for this game");
+        require(!hasRefunded[gameNumber][msg.sender], "Already refunded");
+        require(playerTicketCount[msg.sender][gameNumber] > 0, "No tickets to refund");
+
+        uint256 refundAmount = playerTicketCount[msg.sender][gameNumber] * ticketPrice;
+        hasRefunded[gameNumber][msg.sender] = true;
+
+        // Update prize pool
+        gamePrizePool[gameNumber] -= refundAmount;
+
+        // Transfer refund
+        require(paymentToken.transfer(msg.sender, refundAmount), "Refund transfer failed");
+
+        emit TicketsRefunded(msg.sender, gameNumber, refundAmount);
     }
 }
