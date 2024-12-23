@@ -1,0 +1,1 @@
+witnet-solidity-bridge/=lib/witnet-solidity-bridge/

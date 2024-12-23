@@ -47,8 +47,6 @@ interface IPermit2 {
 }
 
 contract Lottery is Ownable, ReentrancyGuard {
-    using BigNumbers for BigNumber;
-
     // Enums
     enum Difficulty { Easy, Medium, Hard }
     enum GameStatus { InPlay, Drawing, Completed }
@@ -78,8 +76,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         uint256[4] winningNumbers;
         Difficulty difficulty;
         uint256 drawInitiatedBlock;
-        uint256 randaoBlock;
-        uint256 randaoValue;
+        uint256 randomSeed;
         uint256[3] payouts;
     }
 
@@ -104,8 +101,8 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant MEDIUM_ETHERBALL_MAX = 10;
     uint256 public constant HARD_MAX = 75;
     uint256 public constant HARD_ETHERBALL_MAX = 10;
-    uint256 public constant DRAW_MIN_TIME_PERIOD = 4 days;
-    uint256 public constant DRAW_DELAY_SECURITY_BUFFER = 128; // ~4 epoch delay 
+    // uint256 public constant DRAW_MIN_TIME_PERIOD = 4 days;
+    uint256 public constant DRAW_MIN_TIME_PERIOD = 1 minutes;
 
     // State variables
     address public feeRecipient;
@@ -135,7 +132,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     mapping(uint256 => mapping(uint32 => mapping(address => bool))) public ticketOwners;
 
     mapping(uint256 => bool) public gameDrawInitiated;
-    mapping(uint256 => uint256) public gameRandomValue;
+    mapping(uint256 => bytes32) public gameRandomSeed;
     mapping(uint256 => uint256) public gameRandomBlock;
     mapping(uint256 => bool) public gameDrawCompleted;
     mapping(uint256 => mapping(address => bool)) public prizesClaimed;
@@ -148,7 +145,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     // Events
     event TicketPurchased(address indexed player, uint256 gameNumber, uint256[3] numbers, uint256 etherball);
     event TicketsPurchased(address indexed player, uint256 gameNumber, uint256 ticketCount);
-    event DrawInitiated(uint256 gameNumber, uint256 targetSetBlock);
+    event DrawInitiated(uint256 gameNumber);
     event RandomSet(uint256 gameNumber, uint256 random);
     event WinningNumbersSet(uint256 indexed gameNumber, uint256 number1, uint256 number2, uint256 number3, uint256 etherball);
     event DifficultyChanged(uint256 gameNumber, Difficulty newDifficulty);
@@ -173,7 +170,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(address(_witnetRandomness) != address(0), "Invalid Witnet address");
         witnet = _witnetRandomness;
         nftPrize = NFTPrize(_nftPrizeAddress);
-        ticketPrice = 1 * 1e18; // 1 token
+        ticketPrice = 0.1 * 1e18; // 1 token
         currentGameNumber = 1;
         gameDifficulty[currentGameNumber] = Difficulty.Easy;
         gameStartBlock[currentGameNumber] = block.number;
@@ -347,7 +344,7 @@ contract Lottery is Ownable, ReentrancyGuard {
 
         _startNextGame();
 
-        emit DrawInitiated(currentGameNumber - 1, targetSetBlock);
+        emit DrawInitiated(currentGameNumber - 1);
     }
 
     /**
@@ -378,13 +375,12 @@ contract Lottery is Ownable, ReentrancyGuard {
      */
     function setRandomAndWinningNumbers(uint256 gameNumber) external {
         require(gameDrawInitiated[gameNumber], "Draw not initiated for this game");
-        require(gameRandomValue[gameNumber] == 0, "Random has already been set");
+        require(gameRandomSeed[gameNumber] == 0, "Random has already been set");
         require(gameRandomizingBlock[gameNumber] > 0, "Randomization not requested");
 
         // Fetch randomness from Witnet
-        bytes32 randomness = witnet.getRandomnessAfter(gameRandomizingBlock[gameNumber]);
-        uint256 randomValue = uint256(randomness);
-        gameRandomValue[gameNumber] = randomValue;
+        bytes32 randomness = witnet.fetchRandomnessAfter(gameRandomizingBlock[gameNumber]);
+        gameRandomSeed[gameNumber] = randomness;
 
         _setWinningNumbers(gameNumber, randomness);
     }
@@ -394,16 +390,15 @@ contract Lottery is Ownable, ReentrancyGuard {
      * @param gameNumber The game number to set winning numbers for
      * @param randomness The randomness value from Witnet
      */
-    function _setWinningNumbers(uint256 gameNumber, uint256 randomness) internal {
+    function _setWinningNumbers(uint256 gameNumber, bytes32 randomness) internal {
         Difficulty difficulty = gameDifficulty[gameNumber];
         (uint256 maxNumber, uint256 maxEtherball) = _getDifficultyParams(difficulty);
 
-        bytes32 randomSeed = bytes32(randomness);
         uint256[4] memory winningNumbers;
 
         for (uint256 i = 0; i < 4; i++) {
             uint256 maxValue = i < 3 ? maxNumber : maxEtherball;
-            winningNumbers[i] = _generateUnbiasedRandomNumber(randomSeed, i, maxValue);
+            winningNumbers[i] = _generateUnbiasedRandomNumber(randomness, i, maxValue);
         }
 
         gameWinningNumbers[gameNumber] = winningNumbers;
@@ -828,9 +823,8 @@ contract Lottery is Ownable, ReentrancyGuard {
             bronzeWinners: bronzeWinners,
             winningNumbers: gameWinningNumbers[gameId],
             difficulty: gameDifficulty[gameId],
-            drawInitiatedBlock: gameDrawInitiated[gameId] ? gameRandomBlock[gameId] - DRAW_DELAY_SECURITY_BUFFER : 0,
-            randaoBlock: gameRandomBlock[gameId],
-            randaoValue: gameRandomValue[gameId],
+            drawInitiatedBlock: gameRandomizingBlock[gameId],
+            randomSeed: uint256(gameRandomSeed[gameId]),
             payouts: gamePayouts[gameId]
         });
     }

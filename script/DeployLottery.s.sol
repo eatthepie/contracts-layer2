@@ -2,22 +2,20 @@
 pragma solidity ^0.8.25;
 
 import "forge-std/Script.sol";
-import "../src/VDFPietrzak.sol";
+import "witnet-solidity-bridge/contracts/interfaces/IWitnetRandomness.sol";
 import "../src/NFTPrize.sol";
 import "../src/Lottery.sol";
 
 contract DeployLottery is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        // uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = 0xac329d01dbbd2ee0b043d3c53af6419fefd59ce30b1a86094184f2d34474a694;
         vm.startBroadcast(deployerPrivateKey);
 
         // FEE RECIPIENT
         address feeRecipient = address(0x123);
         address paymentToken = address(0x123);
-
-        // VDF Contract
-        VDFPietrzak vdfContract = new VDFPietrzak();
-        console.log("VDF Contract deployed to:", address(vdfContract));
+        IWitnetRandomness witnetRandomness = IWitnetRandomness(0xC0FFEE98AD1434aCbDB894BbB752e138c1006fAB);
 
         // NFT Contract
         NFTPrize nftContract = new NFTPrize();
@@ -25,7 +23,7 @@ contract DeployLottery is Script {
 
         // Lottery Contract
         Lottery lotteryContract = new Lottery(
-            address(vdfContract),
+            witnetRandomness,
             address(nftContract),
             feeRecipient,
             paymentToken
