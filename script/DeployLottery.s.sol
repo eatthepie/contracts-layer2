@@ -8,8 +8,7 @@ import "../src/Lottery.sol";
 
 contract DeployLottery is Script {
     function run() external {
-        // uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        uint256 deployerPrivateKey = 0xac329d01dbbd2ee0b043d3c53af6419fefd59ce30b1a86094184f2d34474a694;
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
 
         // FEE RECIPIENT
