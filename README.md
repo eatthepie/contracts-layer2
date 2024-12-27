@@ -1,3 +1,15 @@
+# ⚠️ WARNING: DO NOT USE
+
+This contract implementation contains a vulnerability. **Do not use in production.**
+
+During a live deployment, the VDF verifier failed to validate a proof generated from RANDAO value:
+
+```
+31325452000363991679778000192024676047597961951682627885191052254553440896332
+```
+
+This critical failure in the verification process makes the contract unsafe for use.
+
 ![Eat The Pie](https://github.com/eatthepie/docs/blob/main/static/img/header.png)
 
 > ⚠️ **Layer 2 Fork Notice**
