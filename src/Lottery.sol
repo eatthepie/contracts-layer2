@@ -101,8 +101,7 @@ contract Lottery is Ownable, ReentrancyGuard {
     uint256 public constant MEDIUM_ETHERBALL_MAX = 10;
     uint256 public constant HARD_MAX = 75;
     uint256 public constant HARD_ETHERBALL_MAX = 10;
-    // uint256 public constant DRAW_MIN_TIME_PERIOD = 4 days;
-    uint256 public constant DRAW_MIN_TIME_PERIOD = 1 minutes;
+    uint256 public constant DRAW_MIN_TIME_PERIOD = 4 days;
 
     // State variables
     address public feeRecipient;
@@ -170,7 +169,7 @@ contract Lottery is Ownable, ReentrancyGuard {
         require(address(_witnetRandomness) != address(0), "Invalid Witnet address");
         witnet = _witnetRandomness;
         nftPrize = NFTPrize(_nftPrizeAddress);
-        ticketPrice = 0.1 * 1e18; // 1 token
+        ticketPrice = 1 * 1e18; // 1 token
         currentGameNumber = 1;
         gameDifficulty[currentGameNumber] = Difficulty.Easy;
         gameStartBlock[currentGameNumber] = block.number;
