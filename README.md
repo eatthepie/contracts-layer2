@@ -1,27 +1,8 @@
-# ⚠️ WARNING: DO NOT USE
-
-This contract implementation contains a vulnerability. **Do not use in production.**
-
-During a live deployment, the VDF verifier failed to validate a proof generated from RANDAO value:
-
-```
-31325452000363991679778000192024676047597961951682627885191052254553440896332
-```
-
-This critical failure in the verification process makes the contract unsafe for use.
-
 ![Eat The Pie](https://github.com/eatthepie/docs/blob/main/static/img/header.png)
-
-> ⚠️ **Layer 2 Fork Notice**
->
-> This repository contains a modified version of the [original Eat The Pie contracts](https://github.com/eatthepie/contracts). Key differences in this L2 implementation:
->
-> 1. Randomness Source: Uses blockhash instead of prevrandao for VDFs
-> 2. Payment Method: Implements ERC20 token purchase instead of ETHER
 
 # Eat The Pie Layer 2 Smart Contracts
 
-This repository contains all smart contracts running [Eat The Pie](https://www.eatthepie.xyz), the world lottery on Layer 2.
+This repository contains all smart contracts running [Eat The Pie](https://www.eatthepie.xyz), the world lottery on World Chain.
 
 ## Project Structure 📂
 
@@ -32,12 +13,8 @@ This repository contains all smart contracts running [Eat The Pie](https://www.e
 
 - `src/`: Main contract files
 
-  - `libraries/`: Utility libraries
-    - `BigNumbers.sol`
-    - `PietrzakLibrary.sol`
   - `Lottery.sol`: Main lottery contract
   - `NFTPrize.sol`: NFT prize contract
-  - `VDFPietrzak.sol`: Verifiable Delay Function implementation
 
 ## Setup
 
@@ -94,10 +71,9 @@ forge test --match-path test/[TestFileName].t.sol
 
 ## 📝 Deployed Contracts
 
-| Network             | Address                                      |
-| ------------------- | -------------------------------------------- |
-| World Chain         | `0x44B340051a31D216f83428B447DBa2C102DFF373` |
-| World Chain Sepolia | `0x78334Ea7df16a582cc98980d79D6271c42f9ef81` |
+| Network     | Address                                      |
+| ----------- | -------------------------------------------- |
+| World Chain | `0x86510c295644D1214Dc62112E15ec314076AcF2c` |
 
 ## Documentation 📚
 
